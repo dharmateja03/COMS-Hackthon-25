@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { authService, User } from '../services/auth';
+import { authService } from '../services/auth';
+import type { User } from '../types';
 
 interface AuthContextType {
   user: User | null;
@@ -17,16 +18,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const loadUser = async () => {
-      if (authService.isAuthenticated()) {
-        try {
-          const userData = await authService.getCurrentUser();
-          setUser(userData);
-        } catch (error) {
-          console.error('Failed to load user:', error);
-          authService.logout();
+      try {
+        if (authService.isAuthenticated()) {
+          try {
+            const userData = await authService.getCurrentUser();
+            setUser(userData);
+          } catch (error: any) {
+            console.error('Failed to load user:', error);
+            // If it's a network error or server unavailable, don't clear auth
+            // Only clear if it's actually an auth error (401)
+            if (error.response?.status === 401 || error.response?.status === 403) {
+              authService.logout();
+            } else {
+              // For network errors, just don't set the user but keep loading false
+              // This allows the user to still navigate, but protected routes will redirect
+              console.warn('Unable to verify user authentication, backend may be unavailable');
+            }
+          }
         }
+      } catch (error) {
+        console.error('Error during auth check:', error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     loadUser();

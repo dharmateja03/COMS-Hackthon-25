@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { courseService } from '../services/course';
 import { uploadService } from '../services/upload';
-import { Course, Upload } from '../types';
+import type { Course, Upload } from '../types';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 
@@ -157,10 +157,14 @@ export default function CoursePage() {
                   onChange={handleFileUpload}
                   disabled={uploading}
                 />
-                <label htmlFor="file-upload">
-                  <Button as="span" disabled={uploading}>
+                <label htmlFor="file-upload" className="cursor-pointer">
+                  <span className={`inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors h-10 px-4 py-2 ${
+                    uploading
+                      ? 'bg-gray-400 text-white cursor-not-allowed'
+                      : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                  }`}>
                     {uploading ? 'Uploading...' : '+ Upload File'}
-                  </Button>
+                  </span>
                 </label>
               </div>
             </div>
@@ -175,10 +179,10 @@ export default function CoursePage() {
               <Card className="text-center py-12">
                 <CardContent>
                   <p className="text-gray-500 mb-4">No materials uploaded yet</p>
-                  <label htmlFor="file-upload">
-                    <Button as="span">
+                  <label htmlFor="file-upload" className="cursor-pointer">
+                    <span className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors h-10 px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90">
                       Upload Your First File
-                    </Button>
+                    </span>
                   </label>
                 </CardContent>
               </Card>
