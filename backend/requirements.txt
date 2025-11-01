@@ -11,7 +11,9 @@ alembic==1.12.1
 # Authentication
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 python-dotenv==1.0.0
+email-validator==2.1.0
 
 # Gemini API
 google-generativeai==0.3.1
@@ -23,6 +25,7 @@ python-magic==0.4.27
 # Snowflake
 snowflake-connector-python==3.6.0
 snowflake-sqlalchemy==1.5.1
+
 
 # Utilities
 pydantic==2.5.0

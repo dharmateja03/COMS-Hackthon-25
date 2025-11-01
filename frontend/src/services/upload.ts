@@ -1,5 +1,5 @@
 import api from './api';
-import { Upload } from '../types';
+import type { Upload } from '../types';
 
 export const uploadService = {
   async getUploads(courseId: string): Promise<Upload[]> {

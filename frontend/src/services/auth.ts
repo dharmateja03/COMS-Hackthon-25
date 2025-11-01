@@ -1,4 +1,5 @@
 import api from './api';
+import type { User } from '../types';
 
 export interface LoginData {
   email: string;
@@ -8,12 +9,6 @@ export interface LoginData {
 export interface RegisterData {
   email: string;
   password: string;
-}
-
-export interface User {
-  id: string;
-  email: string;
-  created_at: string;
 }
 
 export const authService = {

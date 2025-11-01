@@ -2,10 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Apply border to all elements globally */
-* {
-  @apply border border-border;
-}
 
 #root {
   max-width: 1280px;

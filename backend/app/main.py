@@ -35,7 +35,7 @@ def health_check():
 from app.api import auth, courses, uploads, quiz, ai
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
 app.include_router(courses.router, prefix=f"{settings.API_V1_STR}/courses", tags=["courses"])
-app.include_router(uploads.router, prefix=f"{settings.API_V1_STR}", tags=["uploads"])
+app.include_router(uploads.router, prefix=f"{settings.API_V1_STR}/courses", tags=["uploads"])
 app.include_router(quiz.router, prefix=f"{settings.API_V1_STR}/quiz", tags=["quiz"])
 app.include_router(ai.router, prefix=f"{settings.API_V1_STR}/ai", tags=["ai"])
 
