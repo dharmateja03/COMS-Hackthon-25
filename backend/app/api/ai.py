@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
 from uuid import UUID
+import numpy as np
 
 from app.db.base import get_db
 from app.models.user import User
@@ -12,6 +13,13 @@ from app.api.auth import get_current_user
 from app.services.gemini_service import gemini_service
 
 router = APIRouter()
+
+
+def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
+    """Calculate cosine similarity between two vectors"""
+    vec1_np = np.array(vec1)
+    vec2_np = np.array(vec2)
+    return float(np.dot(vec1_np, vec2_np) / (np.linalg.norm(vec1_np) * np.linalg.norm(vec2_np)))
 
 
 # Pydantic schemas
@@ -60,37 +68,83 @@ def chat_with_ai(
             detail="Course not found"
         )
 
-    # Build context from course materials
+    # Build context using semantic search with embeddings
     context = ""
 
-    if chat_request.upload_id:
-        # Use specific upload as context
-        upload_id = UUID(chat_request.upload_id)
-        upload = db.query(Upload).filter(
-            Upload.id == upload_id,
-            Upload.course_id == course_id
-        ).first()
+    try:
+        # Generate embedding for the user's question
+        question_embedding = gemini_service.semantic_search_query(chat_request.message)
 
-        if not upload:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Upload not found"
-            )
+        # Get uploads to search
+        if chat_request.upload_id:
+            # Search in specific upload
+            upload_id = UUID(chat_request.upload_id)
+            uploads = db.query(Upload).filter(
+                Upload.id == upload_id,
+                Upload.course_id == course_id,
+                Upload.status == 'ready'
+            ).all()
+        else:
+            # Search across all course uploads
+            uploads = db.query(Upload).filter(
+                Upload.course_id == course_id,
+                Upload.status == 'ready'
+            ).all()
 
-        if upload.text_content:
-            context = f"Content from {upload.file_name}:\n\n{upload.text_content[:5000]}"
-
-    else:
-        # Use all course materials as context
-        uploads = db.query(Upload).filter(
-            Upload.course_id == course_id,
-            Upload.status == 'ready'
-        ).limit(5).all()  # Limit to avoid token overflow
+        # Find most relevant chunks using cosine similarity
+        relevant_chunks = []
 
         for upload in uploads:
-            if upload.text_content:
-                context += f"\n\n--- {upload.file_name} ---\n\n"
-                context += upload.text_content[:2000]  # Limit each upload
+            if upload.embeddings:
+                for chunk_data in upload.embeddings:
+                    chunk_text = chunk_data.get('chunk', '')
+                    chunk_embedding = chunk_data.get('embedding', [])
+
+                    if chunk_embedding:
+                        similarity = cosine_similarity(question_embedding, chunk_embedding)
+                        relevant_chunks.append({
+                            'text': chunk_text,
+                            'similarity': similarity,
+                            'file_name': upload.file_name
+                        })
+
+        # Sort by similarity and take top 5 chunks
+        relevant_chunks.sort(key=lambda x: x['similarity'], reverse=True)
+        top_chunks = relevant_chunks[:5]
+
+        # Build context from top chunks
+        if top_chunks:
+            context = "Relevant context from course materials:\n\n"
+            for i, chunk in enumerate(top_chunks, 1):
+                context += f"[{i}] From {chunk['file_name']} (relevance: {chunk['similarity']:.2f}):\n"
+                context += f"{chunk['text']}\n\n"
+        else:
+            # Fallback to basic text if no embeddings available
+            uploads_with_text = [u for u in uploads if u.text_content]
+            if uploads_with_text:
+                context = f"Content from {uploads_with_text[0].file_name}:\n\n"
+                context += uploads_with_text[0].text_content[:2000]
+
+    except Exception as e:
+        print(f"Error in semantic search: {str(e)}")
+        # Fallback to basic retrieval
+        if chat_request.upload_id:
+            upload_id = UUID(chat_request.upload_id)
+            upload = db.query(Upload).filter(
+                Upload.id == upload_id,
+                Upload.course_id == course_id
+            ).first()
+            if upload and upload.text_content:
+                context = f"Content from {upload.file_name}:\n\n{upload.text_content[:2000]}"
+        else:
+            uploads = db.query(Upload).filter(
+                Upload.course_id == course_id,
+                Upload.status == 'ready'
+            ).limit(2).all()
+            for upload in uploads:
+                if upload.text_content:
+                    context += f"\n\n--- {upload.file_name} ---\n\n"
+                    context += upload.text_content[:1000]
 
     # Chat with Gemini
     try:

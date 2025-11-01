@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
@@ -45,6 +46,23 @@ def process_upload_background(upload_id: str, file_path: str, file_type: str, db
             # Extract text from PDF
             text = gemini_service.extract_pdf_text(file_path)
             upload.text_content = text
+
+            # Generate embeddings for text chunks
+            chunks = gemini_service.chunk_text(text, chunk_size=500)
+            embeddings_data = []
+
+            for chunk in chunks:
+                if chunk.strip():  # Skip empty chunks
+                    try:
+                        embedding = gemini_service.generate_embeddings(chunk)
+                        embeddings_data.append({
+                            "chunk": chunk,
+                            "embedding": embedding
+                        })
+                    except Exception as e:
+                        print(f"Error generating embedding for chunk: {str(e)}")
+
+            upload.embeddings = embeddings_data
             upload.status = 'ready'
 
         elif file_type == 'video':
@@ -55,6 +73,25 @@ def process_upload_background(upload_id: str, file_path: str, file_type: str, db
             upload.summary = result.get('summary')
             upload.video_duration_seconds = result.get('duration_seconds')
             upload.text_content = result.get('transcript')  # Use transcript as text content
+
+            # Generate embeddings for transcript chunks
+            if upload.text_content:
+                chunks = gemini_service.chunk_text(upload.text_content, chunk_size=500)
+                embeddings_data = []
+
+                for chunk in chunks:
+                    if chunk.strip():
+                        try:
+                            embedding = gemini_service.generate_embeddings(chunk)
+                            embeddings_data.append({
+                                "chunk": chunk,
+                                "embedding": embedding
+                            })
+                        except Exception as e:
+                            print(f"Error generating embedding for chunk: {str(e)}")
+
+                upload.embeddings = embeddings_data
+
             upload.status = 'ready'
 
         upload.processed_at = datetime.utcnow()
@@ -284,3 +321,53 @@ def delete_upload(
     db.commit()
 
     return None
+
+
+@router.get("/{course_id}/files/{upload_id}")
+def serve_file(
+    course_id: UUID,
+    upload_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Serve uploaded file for viewing"""
+
+    # Verify course belongs to user
+    course = db.query(Course).filter(
+        Course.id == course_id,
+        Course.user_id == current_user.id
+    ).first()
+
+    if not course:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found"
+        )
+
+    # Get upload
+    upload = db.query(Upload).filter(
+        Upload.id == upload_id,
+        Upload.course_id == course_id
+    ).first()
+
+    if not upload:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
+
+    # Check if file exists
+    if not os.path.exists(upload.file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found on disk"
+        )
+
+    # Return file
+    media_type = "application/pdf" if upload.file_type == "pdf" else "video/mp4"
+
+    return FileResponse(
+        path=upload.file_path,
+        media_type=media_type,
+        filename=upload.file_name
+    )

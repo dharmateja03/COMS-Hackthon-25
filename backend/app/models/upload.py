@@ -25,6 +25,10 @@ class Upload(Base):
     # Content
     text_content = Column(Text, nullable=True)  # extracted text or transcript
 
+    # Vector embeddings for RAG
+    # Stores chunks with embeddings: [{"chunk": "text...", "embedding": [0.1, 0.2, ...]}]
+    embeddings = Column(JSONB, nullable=True)
+
     # Video-specific fields
     transcript = Column(Text, nullable=True)
     video_duration_seconds = Column(Integer, nullable=True)

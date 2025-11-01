@@ -14,7 +14,7 @@ genai.configure(api_key=settings.GEMINI_API_KEY)
 
 class GeminiService:
     def __init__(self):
-        self.model = genai.GenerativeModel('gemini-1.5-pro')
+        self.model = genai.GenerativeModel('gemini-2.5-flash')
 
     def extract_pdf_text(self, pdf_path: str) -> str:
         """Extract text from PDF file"""
