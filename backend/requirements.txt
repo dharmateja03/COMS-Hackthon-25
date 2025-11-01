@@ -30,3 +30,4 @@ snowflake-sqlalchemy==1.5.1
 # Utilities
 pydantic==2.5.0
 pydantic-settings==2.1.0
+numpy==1.26.2
