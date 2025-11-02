@@ -1,0 +1,321 @@
+import React from 'react';
+import { ArrowLeftIcon, BookOpenIcon, TargetIcon, PlusIcon, FileTextIcon } from 'lucide-react';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+export function CoursePage() {
+  const materials = [{
+    id: 1,
+    name: 'lecture-1.pdf'
+  }, {
+    id: 2,
+    name: 'notes.txt'
+  }, {
+    id: 3,
+    name: 'assignment-1.pdf'
+  }, {
+    id: 4,
+    name: 'reading-material.pdf'
+  }];
+  // Sample data for charts
+  const progressData = [{
+    day: 'Mon',
+    progress: 20
+  }, {
+    day: 'Tue',
+    progress: 35
+  }, {
+    day: 'Wed',
+    progress: 45
+  }, {
+    day: 'Thu',
+    progress: 60
+  }, {
+    day: 'Fri',
+    progress: 75
+  }, {
+    day: 'Sat',
+    progress: 85
+  }, {
+    day: 'Sun',
+    progress: 92
+  }];
+  const quizScoreData = [{
+    week: 'W1',
+    score: 75
+  }, {
+    week: 'W2',
+    score: 82
+  }, {
+    week: 'W3',
+    score: 78
+  }, {
+    week: 'W4',
+    score: 88
+  }, {
+    week: 'W5',
+    score: 91
+  }, {
+    week: 'W6',
+    score: 95
+  }];
+  const timeSpentData = [{
+    module: 'Intro',
+    hours: 5
+  }, {
+    module: 'Basics',
+    hours: 8
+  }, {
+    module: 'Advanced',
+    hours: 12
+  }, {
+    module: 'Projects',
+    hours: 15
+  }, {
+    module: 'Review',
+    hours: 6
+  }];
+  // Network graph data
+  const networkMaterials = [{
+    id: 1,
+    name: 'Lecture 1',
+    angle: 0,
+    connected: true
+  }, {
+    id: 2,
+    name: 'Notes',
+    angle: 60,
+    connected: true
+  }, {
+    id: 3,
+    name: 'Assignment',
+    angle: 120,
+    connected: false
+  }, {
+    id: 4,
+    name: 'Reading',
+    angle: 180,
+    connected: true
+  }, {
+    id: 5,
+    name: 'Quiz',
+    angle: 240,
+    connected: true
+  }, {
+    id: 6,
+    name: 'Project',
+    angle: 300,
+    connected: false
+  }];
+  const centerX = 150;
+  const centerY = 150;
+  const radius = 100;
+  return <div className="min-h-screen bg-[#0a0a0f] text-white p-6 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <button className="mb-6 p-2 rounded-lg bg-[#1e293b] border border-gray-700 hover:border-cyan-500 transition-all duration-300 hover:shadow-[0_0_20px_rgba(6,182,212,0.5)]">
+            <ArrowLeftIcon className="w-5 h-5 text-gray-300" />
+          </button>
+          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-cyan-400 to-pink-500 bg-clip-text text-transparent">
+            Computer Vision
+          </h1>
+        </div>
+
+        {/* Navigation Tiles */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+          {/* Start Learning Tile */}
+          <button className="bg-[#1e293b] border border-gray-700 rounded-xl p-8 text-left transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_20px_50px_rgba(6,182,212,0.6)] hover:border-cyan-500">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="p-3 bg-cyan-500/20 rounded-lg">
+                <BookOpenIcon className="w-8 h-8 text-cyan-400" />
+              </div>
+              <h2 className="text-2xl font-bold text-white">Start Learning</h2>
+            </div>
+            <p className="text-gray-400">Continue your course journey</p>
+          </button>
+
+          {/* Test Your Skills Tile */}
+          <button className="bg-[#1e293b] border border-gray-700 rounded-xl p-8 text-left transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_20px_50px_rgba(236,72,153,0.6)] hover:border-pink-500">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="p-3 bg-pink-500/20 rounded-lg">
+                <TargetIcon className="w-8 h-8 text-pink-400" />
+              </div>
+              <h2 className="text-2xl font-bold text-white">
+                Test Your Skills
+              </h2>
+            </div>
+            <p className="text-gray-400">Take quizzes and assessments</p>
+          </button>
+        </div>
+
+        {/* Course Materials */}
+        <div className="mb-12">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-white">Course Materials</h2>
+            <button className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-cyan-500 to-pink-500 rounded-lg font-semibold transition-all duration-300 hover:shadow-[0_0_30px_rgba(6,182,212,0.5),0_0_30px_rgba(236,72,153,0.5)] hover:scale-105">
+              <PlusIcon className="w-5 h-5" />
+              Upload Material
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {materials.map(material => <div key={material.id} className="bg-[#1e293b] border border-gray-700 rounded-lg p-4 flex items-center gap-4 hover:border-cyan-500 transition-all duration-300 cursor-pointer">
+                <div className="p-2 bg-cyan-500/20 rounded">
+                  <FileTextIcon className="w-5 h-5 text-cyan-400" />
+                </div>
+                <span className="text-gray-200">{material.name}</span>
+              </div>)}
+          </div>
+        </div>
+
+        {/* Analytics */}
+        <div>
+          <h2 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-pink-500 bg-clip-text text-transparent mb-6">
+            Your Progress
+          </h2>
+
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            {/* Current Streak */}
+            <div className="bg-[#1e293b] border border-gray-700 rounded-xl p-6">
+              <h3 className="text-gray-400 text-sm mb-2">Current Streak</h3>
+              <p className="text-4xl font-bold text-cyan-400 drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]">
+                5 Days
+              </p>
+            </div>
+
+            {/* Average Quiz Score */}
+            <div className="bg-[#1e293b] border border-gray-700 rounded-xl p-6">
+              <h3 className="text-gray-400 text-sm mb-2">Average Quiz Score</h3>
+              <p className="text-4xl font-bold text-cyan-400 drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]">
+                88%
+              </p>
+            </div>
+
+            {/* Materials Covered */}
+            <div className="bg-[#1e293b] border border-gray-700 rounded-xl p-6">
+              <h3 className="text-gray-400 text-sm mb-2">Materials Covered</h3>
+              <p className="text-4xl font-bold text-cyan-400 drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]">
+                5 / 8
+              </p>
+            </div>
+          </div>
+
+          {/* Charts Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Line Chart 1 - Learning Progress */}
+            <div className="bg-[#1e293b] border border-gray-700 rounded-xl p-6">
+              <h3 className="text-lg font-semibold text-white mb-4">
+                Weekly Learning Progress
+              </h3>
+              <ResponsiveContainer width="100%" height={250}>
+                <LineChart data={progressData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis dataKey="day" stroke="#9ca3af" />
+                  <YAxis stroke="#9ca3af" />
+                  <Tooltip contentStyle={{
+                  backgroundColor: '#1e293b',
+                  border: '1px solid #374151',
+                  borderRadius: '8px',
+                  color: '#fff'
+                }} />
+                  <Line type="monotone" dataKey="progress" stroke="#06b6d4" strokeWidth={3} dot={{
+                  fill: '#06b6d4',
+                  r: 5
+                }} activeDot={{
+                  r: 7,
+                  fill: '#06b6d4'
+                }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Line Chart 2 - Quiz Scores */}
+            <div className="bg-[#1e293b] border border-gray-700 rounded-xl p-6">
+              <h3 className="text-lg font-semibold text-white mb-4">
+                Quiz Score Trends
+              </h3>
+              <ResponsiveContainer width="100%" height={250}>
+                <LineChart data={quizScoreData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis dataKey="week" stroke="#9ca3af" />
+                  <YAxis stroke="#9ca3af" />
+                  <Tooltip contentStyle={{
+                  backgroundColor: '#1e293b',
+                  border: '1px solid #374151',
+                  borderRadius: '8px',
+                  color: '#fff'
+                }} />
+                  <Line type="monotone" dataKey="score" stroke="#ec4899" strokeWidth={3} dot={{
+                  fill: '#ec4899',
+                  r: 5
+                }} activeDot={{
+                  r: 7,
+                  fill: '#ec4899'
+                }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Bar Chart - Time Spent */}
+            <div className="bg-[#1e293b] border border-gray-700 rounded-xl p-6">
+              <h3 className="text-lg font-semibold text-white mb-4">
+                Time Spent per Module
+              </h3>
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={timeSpentData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                  <XAxis dataKey="module" stroke="#9ca3af" />
+                  <YAxis stroke="#9ca3af" />
+                  <Tooltip contentStyle={{
+                  backgroundColor: '#1e293b',
+                  border: '1px solid #374151',
+                  borderRadius: '8px',
+                  color: '#fff'
+                }} />
+                  <Bar dataKey="hours" fill="#06b6d4" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Network Graph - Material Connections */}
+            <div className="bg-[#1e293b] border border-gray-700 rounded-xl p-6">
+              <h3 className="text-lg font-semibold text-white mb-4">
+                Material Network
+              </h3>
+              <div className="flex items-center justify-center">
+                <svg width="300" height="300" viewBox="0 0 300 300">
+                  {/* Connection lines */}
+                  {networkMaterials.map(material => {
+                  if (!material.connected) return null;
+                  const angle = material.angle * Math.PI / 180;
+                  const x = centerX + radius * Math.cos(angle);
+                  const y = centerY + radius * Math.sin(angle);
+                  return <line key={`line-${material.id}`} x1={centerX} y1={centerY} x2={x} y2={y} stroke="#06b6d4" strokeWidth="2" opacity="0.5" />;
+                })}
+
+                  {/* Center circle */}
+                  <circle cx={centerX} cy={centerY} r="30" fill="#1e293b" stroke="#ec4899" strokeWidth="3" filter="drop-shadow(0 0 10px rgba(236, 72, 153, 0.8))" />
+                  <text x={centerX} y={centerY} textAnchor="middle" dominantBaseline="middle" fill="#fff" fontSize="12" fontWeight="bold">
+                    Course
+                  </text>
+
+                  {/* Material circles */}
+                  {networkMaterials.map(material => {
+                  const angle = material.angle * Math.PI / 180;
+                  const x = centerX + radius * Math.cos(angle);
+                  const y = centerY + radius * Math.sin(angle);
+                  return <g key={material.id}>
+                        <circle cx={x} cy={y} r="25" fill="#1e293b" stroke={material.connected ? '#06b6d4' : '#6b7280'} strokeWidth="2" filter={material.connected ? 'drop-shadow(0 0 8px rgba(6, 182, 212, 0.6))' : 'none'} />
+                        <text x={x} y={y} textAnchor="middle" dominantBaseline="middle" fill={material.connected ? '#06b6d4' : '#9ca3af'} fontSize="9" fontWeight="600">
+                          {material.name}
+                        </text>
+                      </g>;
+                })}
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>;
+}

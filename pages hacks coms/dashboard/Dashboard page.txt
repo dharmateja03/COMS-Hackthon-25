@@ -1,0 +1,211 @@
+Dashboard page
+
+```index.tsx
+import './index.css'
+import React from "react";
+import { render } from "react-dom";
+import { App } from "./App";
+
+render(<App />, document.getElementById("root"));
+
+```
+```App.tsx
+import React from 'react'
+import { Dashboard } from './pages/Dashboard'
+export function App() {
+  return <Dashboard />
+}
+
+```
+```tailwind.config.js
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        'dark-bg': '#0a0a0f',
+        'dark-card': '#1e293b',
+        'teal-glow': '#06b6d4',
+        'magenta-glow': '#ec4899',
+      },
+      boxShadow: {
+        'glow-teal': '0 0 20px rgba(6, 182, 212, 0.5)',
+        'glow-magenta': '0 0 20px rgba(236, 72, 153, 0.5)',
+        'glow-mixed': '0 0 30px rgba(6, 182, 212, 0.3), 0 0 30px rgba(236, 72, 153, 0.3)',
+      },
+    },
+  },
+  plugins: [],
+}
+```
+```index.css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #0a0a0f;
+}
+
+@layer utilities {
+  .gradient-text {
+    background: linear-gradient(90deg, #06b6d4 0%, #ec4899 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .gradient-bg {
+    background: linear-gradient(90deg, #06b6d4 0%, #ec4899 100%);
+  }
+}
+```
+```components/DashboardHeader.tsx
+import React from 'react'
+import { PlusIcon, LogOutIcon } from 'lucide-react'
+export function DashboardHeader() {
+  return (
+    <header className="bg-dark-bg border-b border-gray-800 px-6 py-4">
+      <div className="max-w-7xl mx-auto flex items-center justify-between">
+        {/* Left side */}
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-bold text-white">Classroom AI</h1>
+          <p className="text-sm text-gray-400">Welcome, user@email.com</p>
+        </div>
+
+        {/* Right side */}
+        <div className="flex items-center gap-3">
+          <button className="gradient-bg text-white px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 hover:shadow-glow-mixed transition-all duration-300 hover:scale-105">
+            <PlusIcon className="w-5 h-5" />
+            Create Course
+          </button>
+          <button className="bg-dark-card text-gray-300 px-6 py-2.5 rounded-lg font-medium flex items-center gap-2 hover:bg-gray-700 transition-all duration-300 border border-gray-700 hover:border-gray-600">
+            <LogOutIcon className="w-5 h-5" />
+            Sign Out
+          </button>
+        </div>
+      </div>
+    </header>
+  )
+}
+
+```
+```components/CourseCard.tsx
+import React from 'react'
+import { BookOpenIcon, CalendarIcon } from 'lucide-react'
+interface CourseCardProps {
+  title: string
+  description: string
+  dateCreated: string
+}
+export function CourseCard({
+  title,
+  description,
+  dateCreated,
+}: CourseCardProps) {
+  return (
+    <div className="bg-dark-card border border-gray-700 rounded-xl p-6 cursor-pointer transition-all duration-300 hover:border-teal-glow hover:shadow-glow-mixed hover:-translate-y-1 group">
+      <div className="flex items-start gap-3 mb-4">
+        <div className="p-2 bg-gray-800 rounded-lg group-hover:bg-gradient-to-r group-hover:from-teal-glow group-hover:to-magenta-glow transition-all duration-300">
+          <BookOpenIcon className="w-6 h-6 text-teal-glow group-hover:text-white" />
+        </div>
+        <div className="flex-1">
+          <h3 className="text-xl font-semibold text-white mb-2 group-hover:gradient-text transition-all duration-300">
+            {title}
+          </h3>
+        </div>
+      </div>
+
+      <p className="text-gray-400 text-sm mb-4 line-clamp-2">{description}</p>
+
+      <div className="flex items-center gap-2 text-xs text-gray-500">
+        <CalendarIcon className="w-4 h-4" />
+        <span>Created {dateCreated}</span>
+      </div>
+    </div>
+  )
+}
+
+```
+```pages/Dashboard.tsx
+import React from 'react'
+import { DashboardHeader } from '../components/DashboardHeader'
+import { CourseCard } from '../components/CourseCard'
+const mockCourses = [
+  {
+    id: 1,
+    title: 'Introduction to Machine Learning',
+    description:
+      'Learn the fundamentals of machine learning, including supervised and unsupervised learning techniques, neural networks, and practical applications.',
+    dateCreated: 'Jan 15, 2024',
+  },
+  {
+    id: 2,
+    title: 'Advanced React Patterns',
+    description:
+      'Master advanced React concepts including custom hooks, context API, performance optimization, and modern state management patterns.',
+    dateCreated: 'Jan 10, 2024',
+  },
+  {
+    id: 3,
+    title: 'Data Structures & Algorithms',
+    description:
+      'Comprehensive guide to essential data structures and algorithms with real-world problem-solving techniques and coding challenges.',
+    dateCreated: 'Jan 5, 2024',
+  },
+  {
+    id: 4,
+    title: 'Web Design Fundamentals',
+    description:
+      'Explore the principles of modern web design, including typography, color theory, layout composition, and user experience best practices.',
+    dateCreated: 'Dec 28, 2023',
+  },
+  {
+    id: 5,
+    title: 'Python for Data Science',
+    description:
+      'Dive into data analysis and visualization using Python, pandas, NumPy, and matplotlib for real-world data science projects.',
+    dateCreated: 'Dec 20, 2023',
+  },
+  {
+    id: 6,
+    title: 'Cloud Computing Essentials',
+    description:
+      'Understanding cloud infrastructure, deployment strategies, serverless architecture, and best practices for scalable applications.',
+    dateCreated: 'Dec 15, 2023',
+  },
+]
+export function Dashboard() {
+  return (
+    <div className="min-h-screen bg-dark-bg">
+      <DashboardHeader />
+
+      <main className="max-w-7xl mx-auto px-6 py-12">
+        <h2 className="text-4xl font-bold gradient-text mb-8">My Courses</h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {mockCourses.map((course) => (
+            <CourseCard
+              key={course.id}
+              title={course.title}
+              description={course.description}
+              dateCreated={course.dateCreated}
+            />
+          ))}
+        </div>
+      </main>
+    </div>
+  )
+}
+
+```
