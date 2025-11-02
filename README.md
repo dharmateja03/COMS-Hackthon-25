@@ -1,6 +1,6 @@
 # Classroom AI
 
-**Co-authored by:** Dharmatejasamudrala & Claude
+**Co-authored by:** Dharmatejasamudrala & Keshav
 
 ## Purpose
 An AI-powered learning platform that helps students study smarter through intelligent tutoring, automated quiz generation, and comprehensive analytics. Upload your course materials (PDFs/videos) and let AI help you learn more effectively.
