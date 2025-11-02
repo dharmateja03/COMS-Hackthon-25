@@ -21,6 +21,8 @@ class QuizAttempt(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     quiz_id = Column(UUID(as_uuid=True), ForeignKey("quizzes.id"), nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    answers = Column(JSONB, nullable=False)  # [{question_id, selected_answer}]
+    answers = Column(JSONB, nullable=False)  # [{question_id, selected_answer, confidence}]
     score = Column(Float, nullable=False)
+    time_taken_seconds = Column(Float, nullable=True)  # Time taken to complete quiz
+    performance_data = Column(JSONB, nullable=True)  # {weak_topics: [], strong_topics: [], accuracy_by_topic: {}}
     completed_at = Column(DateTime(timezone=True), server_default=func.now())

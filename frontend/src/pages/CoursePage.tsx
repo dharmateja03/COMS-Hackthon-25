@@ -1,14 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { courseService } from '../services/course';
 import { uploadService } from '../services/upload';
 import { quizService } from '../services/quiz';
 import { aiService } from '../services/ai';
+import { analyticsService, type CourseAnalytics } from '../services/analytics';
 import type { Course, Upload, Quiz } from '../types';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 
-type TabType = 'uploads' | 'testing' | 'learner';
+type TabType = 'uploads' | 'testing' | 'learner' | 'analytics';
 
 export default function CoursePage() {
   const { courseId } = useParams<{ courseId: string }>();
@@ -25,16 +26,30 @@ export default function CoursePage() {
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatedQuiz, setGeneratedQuiz] = useState<Quiz | null>(null);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
+  const [quizConfidence, setQuizConfidence] = useState<Record<string, number>>({}); // 1-5 confidence level
   const [submittingQuiz, setSubmittingQuiz] = useState(false);
   const [quizResults, setQuizResults] = useState<any>(null);
   const [timeRemaining, setTimeRemaining] = useState(600); // 10 minutes in seconds
   const [quizStarted, setQuizStarted] = useState(false);
+  const [reviewMode, setReviewMode] = useState(false);
 
   // Learner tab state
   const [selectedMaterial, setSelectedMaterial] = useState<Upload | null>(null);
+  const [materialFileUrl, setMaterialFileUrl] = useState<string>('');
   const [chatMessages, setChatMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([]);
   const [chatInput, setChatInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
+
+  // Voice chat state
+  const [voiceModeEnabled, setVoiceModeEnabled] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  const recognitionRef = useRef<any>(null);
+
+  // Analytics state
+  const [analytics, setAnalytics] = useState<CourseAnalytics | null>(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
 
   useEffect(() => {
     if (courseId) {
@@ -57,6 +72,30 @@ export default function CoursePage() {
       return () => clearInterval(timer);
     }
   }, [quizStarted, timeRemaining, quizResults]);
+
+  // Load file URL when material is selected
+  useEffect(() => {
+    const loadFileUrl = async () => {
+      if (selectedMaterial && courseId) {
+        try {
+          const url = await uploadService.getFileUrl(courseId, selectedMaterial.id);
+          setMaterialFileUrl(url);
+        } catch (error) {
+          console.error('Failed to load file:', error);
+        }
+      } else {
+        setMaterialFileUrl('');
+      }
+    };
+    loadFileUrl();
+
+    // Cleanup: revoke the blob URL when component unmounts or material changes
+    return () => {
+      if (materialFileUrl) {
+        URL.revokeObjectURL(materialFileUrl);
+      }
+    };
+  }, [selectedMaterial, courseId]);
 
   const loadCourseData = async () => {
     try {
@@ -183,6 +222,27 @@ export default function CoursePage() {
     }
   }, [activeTab, uploads, selectedMaterial]);
 
+  // Load analytics when analytics tab is selected
+  useEffect(() => {
+    if (activeTab === 'analytics' && courseId) {
+      loadAnalytics();
+    }
+  }, [activeTab, courseId]);
+
+  const loadAnalytics = async () => {
+    if (!courseId) return;
+
+    setLoadingAnalytics(true);
+    try {
+      const data = await analyticsService.getCourseAnalytics(courseId);
+      setAnalytics(data);
+    } catch (error) {
+      console.error('Failed to load analytics:', error);
+    } finally {
+      setLoadingAnalytics(false);
+    }
+  };
+
   const handleSendMessage = async () => {
     if (!chatInput.trim() || !courseId) return;
 
@@ -194,16 +254,49 @@ export default function CoursePage() {
 
     setSendingMessage(true);
     try {
-      const response = await aiService.chat({
-        message: userMessage,
-        course_id: courseId,
-        upload_id: selectedMaterial?.id // Use selected material as context if available
-      });
+      if (voiceModeEnabled) {
+        // Use voice chat endpoint
+        const response = await aiService.voiceChat({
+          message: userMessage,
+          course_id: courseId,
+          upload_id: selectedMaterial?.id,
+          emotion: 'encouraging'
+        });
 
-      setChatMessages(prev => [...prev, {
-        role: 'assistant',
-        content: response.response
-      }]);
+        // Add text response to chat
+        setChatMessages(prev => [...prev, {
+          role: 'assistant',
+          content: response.responseText
+        }]);
+
+        // Play audio response
+        const audioUrl = URL.createObjectURL(response.audioBlob);
+        const audio = new Audio(audioUrl);
+        setAudioElement(audio);
+        setIsPlayingAudio(true);
+
+        audio.onended = () => {
+          setIsPlayingAudio(false);
+          URL.revokeObjectURL(audioUrl);
+        };
+
+        audio.play().catch(err => {
+          console.error('Error playing audio:', err);
+          setIsPlayingAudio(false);
+        });
+      } else {
+        // Use text chat endpoint
+        const response = await aiService.chat({
+          message: userMessage,
+          course_id: courseId,
+          upload_id: selectedMaterial?.id
+        });
+
+        setChatMessages(prev => [...prev, {
+          role: 'assistant',
+          content: response.response
+        }]);
+      }
     } catch (error) {
       console.error('Failed to send message:', error);
       setChatMessages(prev => [...prev, {
@@ -212,6 +305,63 @@ export default function CoursePage() {
       }]);
     } finally {
       setSendingMessage(false);
+    }
+  };
+
+  const startVoiceRecording = () => {
+    // Check browser support
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert('Speech recognition is not supported in your browser. Please use Chrome or Edge.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+      setIsRecording(true);
+    };
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setChatInput(transcript);
+      setIsRecording(false);
+      recognitionRef.current = null;
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      setIsRecording(false);
+      recognitionRef.current = null;
+      alert('Voice recognition error. Please try again.');
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  };
+
+  const stopVoiceRecording = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+      setIsRecording(false);
+    }
+  };
+
+  const stopAudio = () => {
+    if (audioElement) {
+      audioElement.pause();
+      audioElement.currentTime = 0;
+      setIsPlayingAudio(false);
     }
   };
 
@@ -276,6 +426,16 @@ export default function CoursePage() {
               onClick={() => setActiveTab('learner')}
             >
               Learner
+            </button>
+            <button
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'analytics'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+              onClick={() => setActiveTab('analytics')}
+            >
+              📊 Analytics
             </button>
           </div>
         </div>
@@ -432,9 +592,18 @@ export default function CoursePage() {
                             {quizResults.correct_count} out of {quizResults.total_questions} correct
                           </p>
                         </div>
-                        <Button onClick={() => setGeneratedQuiz(null)} size="lg">
-                          Generate New Quiz
-                        </Button>
+                        <div className="flex gap-3 justify-center">
+                          <Button
+                            onClick={() => setReviewMode(!reviewMode)}
+                            size="lg"
+                            variant={reviewMode ? "outline" : "default"}
+                          >
+                            {reviewMode ? '🔊 Stop Voice Review' : '🎧 Review with Voice'}
+                          </Button>
+                          <Button onClick={() => setGeneratedQuiz(null)} size="lg" variant="outline">
+                            Generate New Quiz
+                          </Button>
+                        </div>
                       </CardContent>
                     </Card>
 
@@ -488,7 +657,32 @@ export default function CoursePage() {
                                   </div>
 
                                   <div className="bg-blue-50 border-l-4 border-blue-400 p-3 mt-3">
-                                    <p className="text-sm font-semibold text-blue-900 mb-1">Explanation:</p>
+                                    <div className="flex justify-between items-start mb-1">
+                                      <p className="text-sm font-semibold text-blue-900">Explanation:</p>
+                                      {reviewMode && (
+                                        <button
+                                          onClick={async () => {
+                                            try {
+                                              const feedbackText = isCorrect
+                                                ? `Correct! ${question.explanation}`
+                                                : `Incorrect. The correct answer is: ${question.options[question.correct]}. ${question.explanation}`;
+
+                                              const emotion = isCorrect ? 'congratulatory' : 'patient';
+                                              const audioBlob = await aiService.textToSpeech(feedbackText, emotion);
+                                              const audioUrl = URL.createObjectURL(audioBlob);
+                                              const audio = new Audio(audioUrl);
+                                              audio.play();
+                                              audio.onended = () => URL.revokeObjectURL(audioUrl);
+                                            } catch (error) {
+                                              console.error('Error playing voice:', error);
+                                            }
+                                          }}
+                                          className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition-colors"
+                                        >
+                                          🔊 Listen
+                                        </button>
+                                      )}
+                                    </div>
                                     <p className="text-sm text-blue-800">{question.explanation}</p>
                                   </div>
                                 </div>
@@ -593,6 +787,30 @@ export default function CoursePage() {
                                     </label>
                                   ))}
                                 </div>
+
+                                {/* Confidence Slider */}
+                                {quizAnswers[question.id] !== undefined && (
+                                  <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                      How confident are you? {quizConfidence[question.id] ? `(${quizConfidence[question.id]}/5)` : ''}
+                                    </label>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-gray-500">Not Sure</span>
+                                      <input
+                                        type="range"
+                                        min="1"
+                                        max="5"
+                                        value={quizConfidence[question.id] || 3}
+                                        onChange={(e) => setQuizConfidence(prev => ({
+                                          ...prev,
+                                          [question.id]: parseInt(e.target.value)
+                                        }))}
+                                        className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                      />
+                                      <span className="text-xs text-gray-500">Very Sure</span>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -684,11 +902,17 @@ export default function CoursePage() {
                             </a>
                           </div>
                           <div className="flex-1 bg-gray-50">
-                            <iframe
-                              src={`http://localhost:8000/api/v1/courses/${selectedMaterial.course_id}/files/${selectedMaterial.id}`}
-                              className="w-full h-full border-0"
-                              title={selectedMaterial.file_name}
-                            />
+                            {materialFileUrl ? (
+                              <iframe
+                                src={materialFileUrl}
+                                className="w-full h-full border-0"
+                                title={selectedMaterial.file_name}
+                              />
+                            ) : (
+                              <div className="flex items-center justify-center h-full">
+                                <p className="text-gray-500">Loading file...</p>
+                              </div>
+                            )}
                           </div>
                         </div>
                       ) : selectedMaterial.file_type === 'video' ? (
@@ -724,8 +948,24 @@ export default function CoursePage() {
                 {/* AI Chat (20%) */}
                 <div className="w-80 bg-white rounded-lg border flex flex-col">
                   <div className="bg-blue-600 text-white px-4 py-3 rounded-t-lg">
-                    <h3 className="font-semibold">AI Tutor</h3>
-                    <p className="text-xs text-blue-100">Ask questions about your materials</p>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-semibold">AI Tutor</h3>
+                        <p className="text-xs text-blue-100">Ask questions about your materials</p>
+                      </div>
+                      {/* Voice Mode Toggle */}
+                      <button
+                        onClick={() => setVoiceModeEnabled(!voiceModeEnabled)}
+                        className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                          voiceModeEnabled
+                            ? 'bg-white text-blue-600'
+                            : 'bg-blue-700 text-white hover:bg-blue-800'
+                        }`}
+                        title="Toggle voice mode"
+                      >
+                        {voiceModeEnabled ? '🔊 Voice ON' : '🔈 Voice OFF'}
+                      </button>
+                    </div>
                   </div>
 
                   {/* Chat Messages */}
@@ -763,26 +1003,230 @@ export default function CoursePage() {
 
                   {/* Chat Input */}
                   <div className="border-t p-4">
+                    {isPlayingAudio && (
+                      <div className="mb-3 flex items-center justify-between bg-blue-50 px-3 py-2 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <div className="flex space-x-1">
+                            <div className="w-1 h-4 bg-blue-600 rounded-full animate-pulse"></div>
+                            <div className="w-1 h-6 bg-blue-600 rounded-full animate-pulse" style={{animationDelay: '0.1s'}}></div>
+                            <div className="w-1 h-4 bg-blue-600 rounded-full animate-pulse" style={{animationDelay: '0.2s'}}></div>
+                          </div>
+                          <span className="text-sm text-blue-700 font-medium">Playing response...</span>
+                        </div>
+                        <button
+                          onClick={stopAudio}
+                          className="text-blue-600 hover:text-blue-800 font-medium text-sm"
+                        >
+                          Stop
+                        </button>
+                      </div>
+                    )}
                     <div className="flex gap-2">
+                      {voiceModeEnabled && (
+                        <>
+                          {!isRecording ? (
+                            <button
+                              onClick={startVoiceRecording}
+                              disabled={sendingMessage}
+                              className="px-3 py-2 rounded-md text-white font-medium transition-colors bg-green-600 hover:bg-green-700 disabled:bg-gray-300"
+                              title="Click to speak"
+                            >
+                              🎤
+                            </button>
+                          ) : (
+                            <button
+                              onClick={stopVoiceRecording}
+                              className="px-3 py-2 rounded-md text-white font-medium transition-colors bg-red-600 hover:bg-red-700 animate-pulse"
+                              title="Stop recording"
+                            >
+                              ⏹️ Stop
+                            </button>
+                          )}
+                        </>
+                      )}
                       <input
                         type="text"
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                        placeholder="Type your question..."
-                        disabled={sendingMessage}
+                        onKeyPress={(e) => e.key === 'Enter' && !sendingMessage && handleSendMessage()}
+                        placeholder={voiceModeEnabled ? "Speak or type..." : "Type your question..."}
+                        disabled={sendingMessage || isRecording}
                         className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
                       />
                       <Button
                         onClick={handleSendMessage}
-                        disabled={!chatInput.trim() || sendingMessage}
+                        disabled={!chatInput.trim() || sendingMessage || isRecording}
                         size="sm"
                       >
-                        Send
+                        {voiceModeEnabled ? '🔊 Send' : 'Send'}
                       </Button>
                     </div>
+                    {voiceModeEnabled && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        💡 Click the microphone to speak (click Stop to end recording), or type your message
+                      </p>
+                    )}
                   </div>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'analytics' && (
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">Course Analytics</h2>
+
+            {loadingAnalytics ? (
+              <div className="flex justify-center items-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+              </div>
+            ) : !analytics || analytics.total_attempts === 0 ? (
+              <Card className="text-center py-12">
+                <CardContent>
+                  <p className="text-gray-500 mb-4">
+                    No quiz attempts yet. Take some quizzes to see your analytics!
+                  </p>
+                  <Button onClick={() => setActiveTab('testing')}>Go to Testing</Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-6">
+                {/* Overview Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium text-gray-600">Average Score</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-3xl font-bold text-blue-600">{analytics.average_score}%</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium text-gray-600">Total Attempts</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-3xl font-bold text-gray-900">{analytics.total_attempts}</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium text-gray-600">Highest Score</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-3xl font-bold text-green-600">{analytics.highest_score}%</p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium text-gray-600">Total Quizzes</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-3xl font-bold text-gray-900">{analytics.total_quizzes}</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Progress Chart */}
+                {analytics.progress_over_time.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Progress Over Time</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {analytics.progress_over_time.map((point, idx) => (
+                          <div key={idx} className="flex items-center gap-3">
+                            <span className="text-sm text-gray-600 w-32">
+                              {new Date(point.date).toLocaleDateString()}
+                            </span>
+                            <div className="flex-1 bg-gray-200 rounded-full h-4 relative overflow-hidden">
+                              <div
+                                className="bg-blue-600 h-full rounded-full transition-all"
+                                style={{ width: `${point.score}%` }}
+                              ></div>
+                              <span className="absolute right-2 top-0 text-xs font-medium text-gray-700">
+                                {point.score}%
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Topics Analysis */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-red-600">⚠️ Areas to Improve</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {analytics.weak_topics.length > 0 ? (
+                        <ul className="space-y-2">
+                          {analytics.weak_topics.map((topic, idx) => (
+                            <li key={idx} className="flex items-center gap-2 text-sm">
+                              <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                              {topic}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-gray-500 text-sm">Great job! No weak areas identified.</p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-green-600">✅ Strong Areas</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {analytics.strong_topics.length > 0 ? (
+                        <ul className="space-y-2">
+                          {analytics.strong_topics.map((topic, idx) => (
+                            <li key={idx} className="flex items-center gap-2 text-sm">
+                              <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                              {topic}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-gray-500 text-sm">Take more quizzes to identify your strengths!</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Recent Attempts */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Recent Quiz Attempts</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {analytics.recent_attempts.map((attempt) => (
+                        <div key={attempt.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div className="flex-1">
+                            <p className="font-medium text-sm">{new Date(attempt.completed_at).toLocaleString()}</p>
+                            {attempt.time_taken_seconds && (
+                              <p className="text-xs text-gray-600">Time: {Math.floor(attempt.time_taken_seconds / 60)}m {attempt.time_taken_seconds % 60}s</p>
+                            )}
+                          </div>
+                          <div className={`text-2xl font-bold ${
+                            attempt.score >= 80 ? 'text-green-600' :
+                            attempt.score >= 60 ? 'text-yellow-600' :
+                            'text-red-600'
+                          }`}>
+                            {attempt.score}%
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             )}
           </div>

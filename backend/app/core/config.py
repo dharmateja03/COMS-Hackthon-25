@@ -18,16 +18,17 @@ class Settings(BaseSettings):
     # Gemini API
     GEMINI_API_KEY: str
 
-    # Snowflake
-    SNOWFLAKE_ACCOUNT: str
-    SNOWFLAKE_USER: str
-    SNOWFLAKE_PASSWORD: str
-    SNOWFLAKE_DATABASE: str = "classroom_ai"
-    SNOWFLAKE_SCHEMA: str = "public"
-    SNOWFLAKE_WAREHOUSE: str = "compute_wh"
+    # Snowflake (optional - for vector search and Cortex AI)
+    SNOWFLAKE_ACCOUNT: Optional[str] = None
+    SNOWFLAKE_USER: Optional[str] = None
+    SNOWFLAKE_PASSWORD: Optional[str] = None
+    SNOWFLAKE_DATABASE: str = "CLASSROOM_AI"
+    SNOWFLAKE_SCHEMA: str = "PUBLIC"
+    SNOWFLAKE_WAREHOUSE: str = "COMPUTE_WH"
+    SNOWFLAKE_USE_CORTEX: bool = True
 
     # 11 Labs (optional)
-    ELEVEN_LABS_API_KEY: Optional[str] = None
+    ELEVENLABS_API_KEY: Optional[str] = None
 
     # File Upload
     MAX_UPLOAD_SIZE_MB: int = 500

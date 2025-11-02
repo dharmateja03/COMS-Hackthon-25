@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
 from uuid import UUID
 import numpy as np
+import base64
 
 from app.db.base import get_db
 from app.models.user import User
@@ -11,6 +13,7 @@ from app.models.course import Course
 from app.models.upload import Upload
 from app.api.auth import get_current_user
 from app.services.gemini_service import gemini_service
+from app.services.voice_service import voice_service
 
 router = APIRouter()
 
@@ -45,6 +48,18 @@ class SearchResult(BaseModel):
     file_type: str
     relevant_text: str
     relevance_score: float
+
+
+class VoiceChatRequest(BaseModel):
+    message: str
+    course_id: str
+    upload_id: Optional[str] = None
+    emotion: Optional[str] = "encouraging"  # neutral, encouraging, excited, patient, serious
+
+
+class TextToSpeechRequest(BaseModel):
+    text: str
+    emotion: Optional[str] = "neutral"
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -127,24 +142,26 @@ def chat_with_ai(
 
     except Exception as e:
         print(f"Error in semantic search: {str(e)}")
-        # Fallback to basic retrieval
+        # Fallback: Use full text content when embeddings fail (e.g., quota exceeded)
         if chat_request.upload_id:
             upload_id = UUID(chat_request.upload_id)
-            upload = db.query(Upload).filter(
+            uploads = db.query(Upload).filter(
                 Upload.id == upload_id,
-                Upload.course_id == course_id
-            ).first()
-            if upload and upload.text_content:
-                context = f"Content from {upload.file_name}:\n\n{upload.text_content[:2000]}"
+                Upload.course_id == course_id,
+                Upload.status == 'ready'
+            ).all()
         else:
             uploads = db.query(Upload).filter(
                 Upload.course_id == course_id,
                 Upload.status == 'ready'
-            ).limit(2).all()
-            for upload in uploads:
+            ).all()
+
+        if uploads:
+            context = "Context from course materials:\n\n"
+            for upload in uploads[:2]:  # Limit to 2 files to avoid token limits
                 if upload.text_content:
-                    context += f"\n\n--- {upload.file_name} ---\n\n"
-                    context += upload.text_content[:1000]
+                    context += f"=== {upload.file_name} ===\n\n"
+                    context += upload.text_content[:3000] + "\n\n"  # First 3000 chars per file
 
     # Chat with Gemini
     try:
@@ -232,3 +249,168 @@ def semantic_search(
     results.sort(key=lambda x: x.relevance_score, reverse=True)
 
     return results[:10]  # Return top 10 results
+
+
+@router.post("/voice-chat")
+def voice_chat(
+    chat_request: VoiceChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Chat with AI tutor and get voice response with emotion
+
+    This endpoint:
+    1. Performs semantic search on course materials
+    2. Generates AI response using Gemini
+    3. Converts response to speech with emotional tone using 11 Labs
+    4. Returns both text and audio
+    """
+
+    # First, get text response using existing chat logic
+    text_request = ChatRequest(
+        message=chat_request.message,
+        course_id=chat_request.course_id,
+        upload_id=chat_request.upload_id
+    )
+
+    # Reuse chat logic (inline to avoid code duplication)
+    course_id = UUID(chat_request.course_id)
+    course = db.query(Course).filter(
+        Course.id == course_id,
+        Course.user_id == current_user.id
+    ).first()
+
+    if not course:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found"
+        )
+
+    # Build context using semantic search
+    context = ""
+    try:
+        question_embedding = gemini_service.semantic_search_query(chat_request.message)
+
+        if chat_request.upload_id:
+            upload_id = UUID(chat_request.upload_id)
+            uploads = db.query(Upload).filter(
+                Upload.id == upload_id,
+                Upload.course_id == course_id,
+                Upload.status == 'ready'
+            ).all()
+        else:
+            uploads = db.query(Upload).filter(
+                Upload.course_id == course_id,
+                Upload.status == 'ready'
+            ).all()
+
+        relevant_chunks = []
+        for upload in uploads:
+            if upload.embeddings:
+                for chunk_data in upload.embeddings:
+                    chunk_text = chunk_data.get('chunk', '')
+                    chunk_embedding = chunk_data.get('embedding', [])
+                    if chunk_embedding:
+                        similarity = cosine_similarity(question_embedding, chunk_embedding)
+                        relevant_chunks.append({
+                            'text': chunk_text,
+                            'similarity': similarity,
+                            'file_name': upload.file_name
+                        })
+
+        relevant_chunks.sort(key=lambda x: x['similarity'], reverse=True)
+        top_chunks = relevant_chunks[:5]
+
+        if top_chunks:
+            context = "Relevant context from course materials:\n\n"
+            for i, chunk in enumerate(top_chunks, 1):
+                context += f"[{i}] From {chunk['file_name']} (relevance: {chunk['similarity']:.2f}):\n"
+                context += f"{chunk['text']}\n\n"
+    except Exception as e:
+        print(f"Error in semantic search: {str(e)}")
+        # Fallback: Use full text content when embeddings fail
+        if chat_request.upload_id:
+            upload_id = UUID(chat_request.upload_id)
+            uploads = db.query(Upload).filter(
+                Upload.id == upload_id,
+                Upload.course_id == course_id,
+                Upload.status == 'ready'
+            ).all()
+        else:
+            uploads = db.query(Upload).filter(
+                Upload.course_id == course_id,
+                Upload.status == 'ready'
+            ).all()
+
+        if uploads:
+            context = "Context from course materials:\n\n"
+            for upload in uploads[:2]:  # Limit to 2 files to avoid token limits
+                if upload.text_content:
+                    context += f"=== {upload.file_name} ===\n\n"
+                    context += upload.text_content[:3000] + "\n\n"  # First 3000 chars per file
+
+    # Get AI response
+    try:
+        response_text = gemini_service.chat(
+            message=chat_request.message,
+            context=context
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error chatting with AI: {str(e)}"
+        )
+
+    # Convert to speech with emotion
+    try:
+        emotion_settings = voice_service.get_emotional_voice_settings(chat_request.emotion)
+        audio_bytes = voice_service.text_to_speech(
+            text=response_text,
+            **emotion_settings
+        )
+
+        # Base64 encode response text to avoid header issues with newlines/special chars
+        response_text_b64 = base64.b64encode(response_text.encode('utf-8')).decode('utf-8')
+
+        return Response(
+            content=audio_bytes,
+            media_type="audio/mpeg",
+            headers={
+                "X-Response-Text": response_text_b64,  # Base64 encoded to avoid header issues
+                "X-Emotion": chat_request.emotion
+            }
+        )
+    except Exception as e:
+        # If voice fails, return text response as fallback
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating voice: {str(e)}"
+        )
+
+
+@router.post("/text-to-speech")
+def text_to_speech(
+    request: TextToSpeechRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Convert any text to speech with emotion
+    Useful for reading out quiz results, feedback, etc.
+    """
+    try:
+        emotion_settings = voice_service.get_emotional_voice_settings(request.emotion)
+        audio_bytes = voice_service.text_to_speech(
+            text=request.text,
+            **emotion_settings
+        )
+
+        return Response(
+            content=audio_bytes,
+            media_type="audio/mpeg"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating speech: {str(e)}"
+        )
