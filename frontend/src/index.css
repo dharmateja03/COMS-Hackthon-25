@@ -51,7 +51,52 @@
 
 @layer base {
   body {
-    background-color: hsl(var(--background));
+    background-color: #0a0a0f;
     color: hsl(var(--foreground));
+  }
+}
+
+@layer utilities {
+  .gradient-text {
+    background: linear-gradient(90deg, #06b6d4 0%, #ec4899 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .gradient-bg {
+    background: linear-gradient(90deg, #06b6d4 0%, #ec4899 100%);
+  }
+
+  .shadow-glow-cyan {
+    box-shadow: 0 0 20px rgba(6, 182, 212, 0.5);
+  }
+
+  .shadow-glow-pink {
+    box-shadow: 0 0 20px rgba(236, 72, 153, 0.5);
+  }
+
+  .shadow-glow-mixed {
+    box-shadow: 0 0 20px rgba(6, 182, 212, 0.5), 0 0 20px rgba(236, 72, 153, 0.5);
+  }
+
+  .bg-dark-bg {
+    background-color: #0a0a0f;
+  }
+
+  .bg-dark-card {
+    background-color: #1e293b;
+  }
+
+  .border-gray-800 {
+    border-color: #1f2937;
+  }
+
+  .text-teal-glow {
+    color: #06b6d4;
+  }
+
+  .text-magenta-glow {
+    color: #ec4899;
   }
 }
