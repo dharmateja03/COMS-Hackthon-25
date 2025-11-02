@@ -4,6 +4,21 @@ export interface User {
   created_at: string;
 }
 
+export interface LoginData {
+  email: string;
+  password: string;
+}
+
+export interface RegisterData {
+  email: string;
+  password: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+}
+
 export interface Course {
   id: string;
   user_id: string;
@@ -12,37 +27,23 @@ export interface Course {
   created_at: string;
 }
 
+export interface CourseCreate {
+  name: string;
+  description?: string;
+}
+
 export interface Upload {
   id: string;
   course_id: string;
   file_name: string;
-  file_path: string;
   file_type: 'pdf' | 'video';
-  storage_url?: string;
-  file_size_mb?: number;
   status: 'processing' | 'ready' | 'failed';
+  created_at: string;
   text_content?: string;
   transcript?: string;
-  video_duration_seconds?: number;
-  timestamps?: Timestamp[];
+  timestamps?: any[];
   summary?: string;
-  created_at: string;
-  processed_at?: string;
-}
-
-export interface Timestamp {
-  time_seconds: number;
-  time_display: string;
-  topic: string;
-  description?: string;
-}
-
-export interface Quiz {
-  id: string;
-  course_id: string;
-  upload_ids: string[];
-  questions: QuizQuestion[];
-  created_at: string;
+  video_duration_seconds?: number;
 }
 
 export interface QuizQuestion {
@@ -53,13 +54,17 @@ export interface QuizQuestion {
   explanation: string;
 }
 
-export interface QuizAttempt {
+export interface Quiz {
   id: string;
-  quiz_id: string;
-  user_id: string;
-  answers: Answer[];
-  score: number;
-  completed_at: string;
+  course_id: string;
+  upload_ids: string[];
+  questions: QuizQuestion[];
+  created_at: string;
+}
+
+export interface QuizGenerateRequest {
+  upload_ids: string[];
+  num_questions?: number;
 }
 
 export interface Answer {
@@ -67,35 +72,50 @@ export interface Answer {
   selected_answer: number;
 }
 
-export interface StudySession {
-  id: string;
-  course_id: string;
-  upload_id: string;
-  user_id: string;
-  duration_minutes?: number;
-  started_at: string;
-  ended_at?: string;
+export interface QuizSubmitRequest {
+  answers: Answer[];
 }
 
-export interface TimeBlock {
-  id: string;
-  course_id: string;
-  days: string[];
-  start_time: string;
-  end_time: string;
+export interface QuestionResult {
+  question_id: string;
+  question: string;
+  options: string[];
+  selected_answer: number;
+  correct_answer: number;
+  is_correct: boolean;
+  explanation: string;
 }
 
-export interface ConfidenceScore {
-  id: string;
-  upload_id: string;
-  user_id: string;
+export interface QuizResults {
+  quiz_id: string;
   score: number;
-  last_reviewed?: string;
-  last_updated: string;
+  total_questions: number;
+  correct_answers: number;
+  results: QuestionResult[];
+  completed_at: string;
 }
 
-export interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: string;
+export interface ChatRequest {
+  message: string;
+  course_id: string;
+  upload_id?: string;
+}
+
+export interface ChatResponse {
+  message: string;
+  response: string;
+}
+
+export interface CourseAnalytics {
+  course_id: string;
+  course_name: string;
+  total_quizzes: number;
+  total_attempts: number;
+  average_score: number;
+  highest_score: number;
+  lowest_score: number;
+  recent_attempts: any[];
+  weak_topics: string[];
+  strong_topics: string[];
+  progress_over_time: Array<{ date: string; score: number }>;
 }

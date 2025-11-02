@@ -1,55 +1,57 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { courseService } from '../services/course';
-import { uploadService } from '../services/upload';
-import { quizService } from '../services/quiz';
-import { aiService } from '../services/ai';
-import { analyticsService, type CourseAnalytics } from '../services/analytics';
-import type { Course, Upload, Quiz } from '../types';
-import { Button } from '../components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-
-type TabType = 'uploads' | 'testing' | 'learner' | 'analytics';
+import { BookOpenIcon, TargetIcon, PlusIcon, FileTextIcon } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { api } from '../services/api';
+import type { Course, Upload, Quiz, ChatResponse, CourseAnalytics } from '../types';
+import { VoiceService, AudioPlayerService } from '../utils/voiceService';
 
 export default function CoursePage() {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
+
   const [course, setCourse] = useState<Course | null>(null);
   const [uploads, setUploads] = useState<Upload[]>([]);
+  const [analytics, setAnalytics] = useState<CourseAnalytics | null>(null);
+  const [studyPlan, setStudyPlan] = useState<any>(null);
+  const [loadingStudyPlan, setLoadingStudyPlan] = useState(false);
+  const [view, setView] = useState<'overview' | 'learning' | 'quiz-select' | 'quiz'>('overview');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabType>('uploads');
+  const [error, setError] = useState('');
+
+  // Upload state
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<string>('');
 
-  // Quiz state
-  const [selectedUploadIds, setSelectedUploadIds] = useState<string[]>([]);
-  const [generatingQuiz, setGeneratingQuiz] = useState(false);
-  const [generatedQuiz, setGeneratedQuiz] = useState<Quiz | null>(null);
-  const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
-  const [quizConfidence, setQuizConfidence] = useState<Record<string, number>>({}); // 1-5 confidence level
-  const [submittingQuiz, setSubmittingQuiz] = useState(false);
-  const [quizResults, setQuizResults] = useState<any>(null);
-  const [timeRemaining, setTimeRemaining] = useState(600); // 10 minutes in seconds
-  const [quizStarted, setQuizStarted] = useState(false);
-  const [reviewMode, setReviewMode] = useState(false);
-
-  // Learner tab state
-  const [selectedMaterial, setSelectedMaterial] = useState<Upload | null>(null);
-  const [materialFileUrl, setMaterialFileUrl] = useState<string>('');
-  const [chatMessages, setChatMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([]);
+  // Learning state
+  const [selectedPdfForViewing, setSelectedPdfForViewing] = useState<Upload | null>(null);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const [loadingPdf, setLoadingPdf] = useState(false);
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'ai'; content: string }>>([]);
   const [chatInput, setChatInput] = useState('');
-  const [sendingMessage, setSendingMessage] = useState(false);
-
-  // Voice chat state
-  const [voiceModeEnabled, setVoiceModeEnabled] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [isVoiceChatActive, setIsVoiceChatActive] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
-  const recognitionRef = useRef<any>(null);
 
-  // Analytics state
-  const [analytics, setAnalytics] = useState<CourseAnalytics | null>(null);
-  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+  // Voice services
+  const voiceServiceRef = useRef<VoiceService>(new VoiceService());
+  const audioPlayerRef = useRef<AudioPlayerService>(new AudioPlayerService());
+
+  // Quiz state
+  const [selectedPdfsForQuiz, setSelectedPdfsForQuiz] = useState<string[]>([]);
+  const [useHybridQuiz, setUseHybridQuiz] = useState(false);
+  const [useDigitalOcean, setUseDigitalOcean] = useState(true);
+  const [useSnowflake, setUseSnowflake] = useState(true);
+  const [quiz, setQuiz] = useState<Quiz | null>(null);
+  const [selectedAnswers, setSelectedAnswers] = useState<{ [key: string]: number }>({});
+  const [quizResults, setQuizResults] = useState<any>(null);
+  const [generatingQuiz, setGeneratingQuiz] = useState(false);
+  const [quizStartTime, setQuizStartTime] = useState<number | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState<number>(1200); // 20 minutes in seconds
+  const [lastAttemptTime, setLastAttemptTime] = useState<number | null>(null);
+  const [aiPlatformsUsed, setAiPlatformsUsed] = useState<string[]>([]);
+
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (courseId) {
@@ -57,152 +59,284 @@ export default function CoursePage() {
     }
   }, [courseId]);
 
-  // Quiz timer
+  // Auto scroll chat to bottom
   useEffect(() => {
-    if (quizStarted && timeRemaining > 0 && !quizResults) {
-      const timer = setInterval(() => {
-        setTimeRemaining((prev) => {
-          if (prev <= 1) {
-            handleSubmitQuiz(); // Auto-submit when time runs out
-            return 0;
-          }
-          return prev - 1;
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  // Load PDF as blob when selected
+  useEffect(() => {
+    if (selectedPdfForViewing && courseId) {
+      setLoadingPdf(true);
+      setPdfBlobUrl(null);
+
+      api.fetchPdfBlob(courseId, selectedPdfForViewing.id)
+        .then((blobUrl) => {
+          setPdfBlobUrl(blobUrl);
+        })
+        .catch((err) => {
+          console.error('Failed to load PDF:', err);
+          setError('Failed to load PDF');
+        })
+        .finally(() => {
+          setLoadingPdf(false);
         });
-      }, 1000);
-      return () => clearInterval(timer);
-    }
-  }, [quizStarted, timeRemaining, quizResults]);
 
-  // Load file URL when material is selected
-  useEffect(() => {
-    const loadFileUrl = async () => {
-      if (selectedMaterial && courseId) {
-        try {
-          const url = await uploadService.getFileUrl(courseId, selectedMaterial.id);
-          setMaterialFileUrl(url);
-        } catch (error) {
-          console.error('Failed to load file:', error);
+      // Cleanup blob URL on unmount or change
+      return () => {
+        if (pdfBlobUrl) {
+          URL.revokeObjectURL(pdfBlobUrl);
         }
-      } else {
-        setMaterialFileUrl('');
-      }
-    };
-    loadFileUrl();
+      };
+    }
+  }, [selectedPdfForViewing, courseId]);
 
-    // Cleanup: revoke the blob URL when component unmounts or material changes
-    return () => {
-      if (materialFileUrl) {
-        URL.revokeObjectURL(materialFileUrl);
-      }
-    };
-  }, [selectedMaterial, courseId]);
+  // Timer effect
+  useEffect(() => {
+    if (quiz && !quizResults && quizStartTime) {
+      const interval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - quizStartTime) / 1000);
+        const remaining = 1200 - elapsed;
+
+        if (remaining <= 0) {
+          handleSubmitQuiz();
+          clearInterval(interval);
+        } else {
+          setTimeRemaining(remaining);
+        }
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [quiz, quizResults, quizStartTime]);
 
   const loadCourseData = async () => {
     try {
       const [courseData, uploadsData] = await Promise.all([
-        courseService.getCourse(courseId!),
-        uploadService.getUploads(courseId!)
+        api.getCourse(courseId!),
+        api.getUploads(courseId!),
       ]);
       setCourse(courseData);
       setUploads(uploadsData);
-    } catch (error) {
-      console.error('Failed to load course:', error);
-      alert('Failed to load course');
-      navigate('/dashboard');
+
+      // Try to load analytics
+      try {
+        const analyticsData = await api.getCourseAnalytics(courseId!);
+        setAnalytics(analyticsData);
+      } catch (err) {
+        console.log('Analytics not available yet');
+      }
+    } catch (err: any) {
+      if (err.status === 401) {
+        navigate('/login');
+      } else {
+        setError(err.message || 'Failed to load course');
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  const loadStudyPlan = async () => {
+    if (!courseId) return;
+
+    setLoadingStudyPlan(true);
+    try {
+      const plan = await api.getIntelligentStudyPlan(courseId);
+      setStudyPlan(plan);
+    } catch (err) {
+      console.log('Study plan not available');
+    } finally {
+      setLoadingStudyPlan(false);
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !courseId) return;
+    if (!file) return;
 
     setUploading(true);
-    setUploadProgress('Uploading file...');
+    setError('');
 
     try {
-      await uploadService.uploadFile(courseId, file);
-      setUploadProgress('Processing file... This may take a moment.');
-
-      // Poll for upload completion
-      setTimeout(async () => {
-        await loadCourseData();
-        setUploadProgress('');
-        setUploading(false);
-      }, 3000);
-
-    } catch (error) {
-      console.error('Failed to upload file:', error);
-      alert('Failed to upload file');
+      const newUpload = await api.uploadFile(courseId!, file);
+      setUploads([...uploads, newUpload]);
+      setTimeout(() => loadCourseData(), 2000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to upload file');
+    } finally {
       setUploading(false);
-      setUploadProgress('');
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    const colors = {
-      processing: 'bg-yellow-100 text-yellow-800',
-      ready: 'bg-green-100 text-green-800',
-      failed: 'bg-red-100 text-red-800'
-    };
-    return colors[status as keyof typeof colors] || colors.processing;
+  const handleSendMessage = async () => {
+    if (!chatInput.trim()) return;
+
+    const userMessage = chatInput;
+    setChatInput('');
+    setChatMessages([...chatMessages, { role: 'user', content: userMessage }]);
+    setChatLoading(true);
+
+    try {
+      const response: ChatResponse = await api.chat(userMessage, courseId!, selectedPdfForViewing?.id);
+      setChatMessages((prev) => [...prev, { role: 'ai', content: response.response }]);
+    } catch (err: any) {
+      setError(err.message || 'Failed to send message');
+    } finally {
+      setChatLoading(false);
+    }
   };
 
-  const handleUploadSelection = (uploadId: string, checked: boolean) => {
-    if (checked) {
-      setSelectedUploadIds([...selectedUploadIds, uploadId]);
-    } else {
-      setSelectedUploadIds(selectedUploadIds.filter(id => id !== uploadId));
+  const handleVoiceChat = () => {
+    const voiceService = voiceServiceRef.current;
+    const audioPlayer = audioPlayerRef.current;
+
+    // Check if browser supports voice
+    if (!voiceService.isSupported()) {
+      setError('Voice chat is not supported in your browser. Please use Chrome, Edge, or Safari.');
+      return;
     }
+
+    // If already recording or playing, stop
+    if (isRecording) {
+      voiceService.stopListening();
+      setIsRecording(false);
+      setIsVoiceChatActive(false);
+      return;
+    }
+
+    if (isPlayingAudio) {
+      audioPlayer.stopAudio();
+      setIsPlayingAudio(false);
+      setIsVoiceChatActive(false);
+      return;
+    }
+
+    // Start recording
+    setIsRecording(true);
+    setIsVoiceChatActive(true);
+
+    voiceService.startListening(
+      async (transcript) => {
+        // Voice recognized successfully
+        setIsRecording(false);
+
+        // Add user message to chat
+        setChatMessages((prev) => [...prev, { role: 'user', content: transcript }]);
+        setChatLoading(true);
+
+        try {
+          // Send to backend and get voice response
+          const response = await api.voiceChat(transcript, courseId!, selectedPdfForViewing?.id, 'encouraging');
+
+          // Add AI response to chat
+          setChatMessages((prev) => [...prev, { role: 'ai', content: response.text }]);
+
+          // Play audio response
+          setIsPlayingAudio(true);
+          audioPlayer.playAudio(response.audioUrl, () => {
+            setIsPlayingAudio(false);
+            setIsVoiceChatActive(false);
+          });
+        } catch (err: any) {
+          setError(err.message || 'Failed to get voice response');
+          setIsVoiceChatActive(false);
+        } finally {
+          setChatLoading(false);
+        }
+      },
+      (error) => {
+        // Error during recording
+        setError(`Voice recognition error: ${error}`);
+        setIsRecording(false);
+        setIsVoiceChatActive(false);
+      }
+    );
+  };
+
+  const handleStartQuizSelection = () => {
+    const readyUploads = uploads.filter((u) => u.status === 'ready' && u.file_type === 'pdf');
+
+    if (readyUploads.length === 0) {
+      setError('No ready PDF materials. Upload and process PDF materials first.');
+      return;
+    }
+
+    // Check if user can attempt quiz (20 min cooldown)
+    if (lastAttemptTime && Date.now() - lastAttemptTime < 1200000) {
+      const remainingMin = Math.ceil((1200000 - (Date.now() - lastAttemptTime)) / 60000);
+      setError(`Please wait ${remainingMin} minutes before attempting another quiz`);
+      return;
+    }
+
+    setView('quiz-select');
+    setSelectedPdfsForQuiz([]);
   };
 
   const handleGenerateQuiz = async () => {
-    if (selectedUploadIds.length === 0 || !courseId) {
-      alert('Please select at least one upload');
+    if (selectedPdfsForQuiz.length === 0) {
+      setError('Please select at least one PDF to generate quiz');
       return;
     }
 
     setGeneratingQuiz(true);
+    setError('');
+
     try {
-      const quiz = await quizService.generateQuiz(courseId, selectedUploadIds);
-      setGeneratedQuiz(quiz);
-      setQuizAnswers({});
+      let quizData;
+      let platforms: string[] = [];
+
+      if (useHybridQuiz) {
+        // Use hybrid quiz with Snowflake + DigitalOcean
+        const response = await api.generateHybridQuiz(
+          courseId!,
+          selectedPdfsForQuiz,
+          20,
+          useDigitalOcean,
+          useSnowflake
+        );
+        quizData = {
+          id: response.quiz_id,
+          questions: response.questions,
+          course_id: courseId,
+          upload_ids: selectedPdfsForQuiz,
+        };
+        platforms = response.ai_platforms_used;
+      } else {
+        // Use regular Gemini quiz
+        quizData = await api.generateQuiz(selectedPdfsForQuiz, 20);
+        platforms = ['Gemini AI'];
+      }
+
+      setQuiz(quizData);
+      setAiPlatformsUsed(platforms);
       setQuizResults(null);
-      setTimeRemaining(600);
-      setQuizStarted(false);
-    } catch (error) {
-      console.error('Failed to generate quiz:', error);
-      alert('Failed to generate quiz');
+      setSelectedAnswers({});
+      setQuizStartTime(Date.now());
+      setTimeRemaining(1200);
+      setView('quiz');
+    } catch (err: any) {
+      setError(err.message || 'Failed to generate quiz');
     } finally {
       setGeneratingQuiz(false);
     }
   };
 
-  const handleStartQuiz = () => {
-    setQuizStarted(true);
-  };
-
-  const handleAnswerSelect = (questionId: string, answerIndex: number) => {
-    setQuizAnswers({
-      ...quizAnswers,
-      [questionId]: answerIndex
-    });
-  };
-
   const handleSubmitQuiz = async () => {
-    if (!generatedQuiz) return;
+    if (!quiz) return;
 
-    setSubmittingQuiz(true);
+    const answers = quiz.questions.map((q) => ({
+      question_id: q.id,
+      selected_answer: selectedAnswers[q.id] ?? -1,
+    }));
+
     try {
-      const results = await quizService.submitQuiz(generatedQuiz.id, quizAnswers);
+      const results = await api.submitQuiz(quiz.id, answers);
       setQuizResults(results);
-      setQuizStarted(false);
-    } catch (error) {
-      console.error('Failed to submit quiz:', error);
-      alert('Failed to submit quiz');
-    } finally {
-      setSubmittingQuiz(false);
+      setLastAttemptTime(Date.now());
+      loadCourseData(); // Reload analytics
+    } catch (err: any) {
+      setError(err.message || 'Failed to submit quiz');
     }
   };
 
@@ -212,1021 +346,681 @@ export default function CoursePage() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Auto-select first ready material when entering learner tab
-  useEffect(() => {
-    if (activeTab === 'learner' && uploads.length > 0 && !selectedMaterial) {
-      const firstReady = uploads.find(u => u.status === 'ready');
-      if (firstReady) {
-        setSelectedMaterial(firstReady);
-      }
-    }
-  }, [activeTab, uploads, selectedMaterial]);
-
-  // Load analytics when analytics tab is selected
-  useEffect(() => {
-    if (activeTab === 'analytics' && courseId) {
-      loadAnalytics();
-    }
-  }, [activeTab, courseId]);
-
-  const loadAnalytics = async () => {
-    if (!courseId) return;
-
-    setLoadingAnalytics(true);
-    try {
-      const data = await analyticsService.getCourseAnalytics(courseId);
-      setAnalytics(data);
-    } catch (error) {
-      console.error('Failed to load analytics:', error);
-    } finally {
-      setLoadingAnalytics(false);
-    }
-  };
-
-  const handleSendMessage = async () => {
-    if (!chatInput.trim() || !courseId) return;
-
-    const userMessage = chatInput.trim();
-    setChatInput('');
-
-    // Add user message to chat
-    setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
-
-    setSendingMessage(true);
-    try {
-      if (voiceModeEnabled) {
-        // Use voice chat endpoint
-        const response = await aiService.voiceChat({
-          message: userMessage,
-          course_id: courseId,
-          upload_id: selectedMaterial?.id,
-          emotion: 'encouraging'
-        });
-
-        // Add text response to chat
-        setChatMessages(prev => [...prev, {
-          role: 'assistant',
-          content: response.responseText
-        }]);
-
-        // Play audio response
-        const audioUrl = URL.createObjectURL(response.audioBlob);
-        const audio = new Audio(audioUrl);
-        setAudioElement(audio);
-        setIsPlayingAudio(true);
-
-        audio.onended = () => {
-          setIsPlayingAudio(false);
-          URL.revokeObjectURL(audioUrl);
-        };
-
-        audio.play().catch(err => {
-          console.error('Error playing audio:', err);
-          setIsPlayingAudio(false);
-        });
-      } else {
-        // Use text chat endpoint
-        const response = await aiService.chat({
-          message: userMessage,
-          course_id: courseId,
-          upload_id: selectedMaterial?.id
-        });
-
-        setChatMessages(prev => [...prev, {
-          role: 'assistant',
-          content: response.response
-        }]);
-      }
-    } catch (error) {
-      console.error('Failed to send message:', error);
-      setChatMessages(prev => [...prev, {
-        role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.'
-      }]);
-    } finally {
-      setSendingMessage(false);
-    }
-  };
-
-  const startVoiceRecording = () => {
-    // Check browser support
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      alert('Speech recognition is not supported in your browser. Please use Chrome or Edge.');
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'en-US';
-    recognition.continuous = false;
-    recognition.interimResults = false;
-
-    recognition.onstart = () => {
-      setIsRecording(true);
-    };
-
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setChatInput(transcript);
-      setIsRecording(false);
-      recognitionRef.current = null;
-    };
-
-    recognition.onerror = (event: any) => {
-      console.error('Speech recognition error:', event.error);
-      setIsRecording(false);
-      recognitionRef.current = null;
-      alert('Voice recognition error. Please try again.');
-    };
-
-    recognition.onend = () => {
-      setIsRecording(false);
-      recognitionRef.current = null;
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-  };
-
-  const stopVoiceRecording = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
-      setIsRecording(false);
-    }
-  };
-
-  const stopAudio = () => {
-    if (audioElement) {
-      audioElement.pause();
-      audioElement.currentTime = 0;
-      setIsPlayingAudio(false);
+  const togglePdfSelection = (uploadId: string) => {
+    if (selectedPdfsForQuiz.includes(uploadId)) {
+      setSelectedPdfsForQuiz(selectedPdfsForQuiz.filter(id => id !== uploadId));
+    } else {
+      setSelectedPdfsForQuiz([...selectedPdfsForQuiz, uploadId]);
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading course...</p>
-        </div>
+      <div className="min-h-screen bg-dark-bg flex items-center justify-center">
+        <div className="text-white text-xl">Loading...</div>
       </div>
     );
   }
 
+  if (!course) {
+    return (
+      <div className="min-h-screen bg-dark-bg flex items-center justify-center">
+        <div className="text-white text-xl">Course Not Found</div>
+      </div>
+    );
+  }
+
+  const readyPdfs = uploads.filter((u) => u.status === 'ready' && u.file_type === 'pdf');
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex justify-between items-center">
-            <div>
-              <Button variant="ghost" onClick={() => navigate('/dashboard')}>
-                ← Back to Dashboard
-              </Button>
-              <h1 className="text-2xl font-bold text-gray-900 mt-2">{course?.name}</h1>
-              <p className="text-sm text-gray-600">{course?.description}</p>
-            </div>
-          </div>
+    <div className="min-h-screen bg-dark-bg">
+      <header className="bg-dark-bg border-b border-gray-800 px-6 py-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-white">Classroom AI</h1>
+          <button 
+            onClick={() => navigate('/dashboard')}
+            className="px-4 py-2 bg-gray-800 border border-gray-700 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors"
+          >
+            ← Back to Courses
+          </button>
         </div>
       </header>
 
-      {/* Tabs */}
-      <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-8">
-            <button
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'uploads'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              onClick={() => setActiveTab('uploads')}
-            >
-              Uploads
-            </button>
-            <button
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'testing'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              onClick={() => setActiveTab('testing')}
-            >
-              Testing
-            </button>
-            <button
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'learner'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              onClick={() => setActiveTab('learner')}
-            >
-              Learner
-            </button>
-            <button
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'analytics'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              onClick={() => setActiveTab('analytics')}
-            >
-              📊 Analytics
-            </button>
-          </div>
-        </div>
-      </div>
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        <h1 className="text-4xl font-bold gradient-text mb-2">{course.name}</h1>
+        {course.description && <p className="text-gray-400 text-lg mb-8">{course.description}</p>}
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === 'uploads' && (
+        {error && (
+          <div className="bg-red-900 border border-red-600 text-red-200 px-4 py-3 rounded-lg mb-6">
+            {error}
+          </div>
+        )}
+
+        {/* Overview */}
+        {view === 'overview' && (
           <div>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-900">Course Materials</h2>
-              <div>
-                <input
-                  type="file"
-                  id="file-upload"
-                  className="hidden"
-                  accept=".pdf,.mp4,.avi,.mov,.mkv,.webm"
-                  onChange={handleFileUpload}
-                  disabled={uploading}
-                />
-                <label htmlFor="file-upload" className="cursor-pointer">
-                  <span className={`inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors h-10 px-4 py-2 ${
-                    uploading
-                      ? 'bg-gray-400 text-white cursor-not-allowed'
-                      : 'bg-primary text-primary-foreground hover:bg-primary/90'
-                  }`}>
-                    {uploading ? 'Uploading...' : '+ Upload File'}
-                  </span>
+            {/* Navigation Tiles */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+              <button 
+                className="bg-dark-card border border-gray-700 rounded-xl p-8 text-left transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_20px_50px_rgba(6,182,212,0.6)] hover:border-cyan-500"
+                onClick={() => setView('learning')}
+              >
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="p-3 bg-cyan-500/20 rounded-lg">
+                    <BookOpenIcon className="w-8 h-8 text-cyan-400" />
+                  </div>
+                  <h2 className="text-2xl font-bold text-white">Start Learning</h2>
+                </div>
+                <p className="text-gray-400">Continue your course journey</p>
+              </button>
+
+              <button 
+                className="bg-dark-card border border-gray-700 rounded-xl p-8 text-left transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_20px_50px_rgba(236,72,153,0.6)] hover:border-pink-500"
+                onClick={handleStartQuizSelection}
+              >
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="p-3 bg-pink-500/20 rounded-lg">
+                    <TargetIcon className="w-8 h-8 text-pink-400" />
+                  </div>
+                  <h2 className="text-2xl font-bold text-white">Test Your Skills</h2>
+                </div>
+                <p className="text-gray-400">Take quizzes and assessments</p>
+              </button>
+            </div>
+
+            {/* Course Materials */}
+            <div className="mb-12">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-white">Course Materials</h2>
+                <label className={uploading ? 'cursor-not-allowed' : 'cursor-pointer'}>
+                  <input
+                    type="file"
+                    accept=".pdf,.mp4,.avi,.mov,.mkv,.webm"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    disabled={uploading}
+                  />
+                  <button 
+                    type="button" 
+                    disabled={uploading}
+                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-cyan-500 to-pink-500 rounded-lg font-semibold transition-all duration-300 hover:shadow-[0_0_30px_rgba(6,182,212,0.5),0_0_30px_rgba(236,72,153,0.5)] hover:scale-105 disabled:opacity-50"
+                  >
+                    <PlusIcon className="w-5 h-5" />
+                    {uploading ? 'Uploading...' : 'Upload Material'}
+                  </button>
                 </label>
+              </div>
+
+              <div className="space-y-3">
+                {uploads.length === 0 ? (
+                  <div className="bg-dark-card border border-gray-700 rounded-lg p-8 text-center">
+                    <p className="text-gray-400">No materials yet. Upload a PDF or video to get started.</p>
+                  </div>
+                ) : (
+                  uploads.map((upload) => (
+                    <div 
+                      key={upload.id} 
+                      className="bg-dark-card border border-gray-700 rounded-lg p-4 flex items-center gap-4 hover:border-cyan-500 transition-all duration-300 cursor-pointer"
+                    >
+                      <div className="p-2 bg-cyan-500/20 rounded">
+                        <FileTextIcon className="w-5 h-5 text-cyan-400" />
+                      </div>
+                      <div className="flex-1">
+                        <span className="text-gray-200 font-medium">{upload.file_name}</span>
+                        <p className="text-gray-500 text-sm mt-1">
+                          {upload.file_type.toUpperCase()} • {' '}
+                          <span className={upload.status === 'ready' ? 'text-green-400' : 'text-yellow-400'}>
+                            {upload.status.toUpperCase()}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
-            {uploadProgress && (
-              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
-                <p className="text-blue-800">{uploadProgress}</p>
-              </div>
-            )}
+            {/* Analytics */}
+            <div>
+              <h2 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-pink-500 bg-clip-text text-transparent mb-6">
+                Your Progress
+              </h2>
 
-            {uploads.length === 0 ? (
-              <Card className="text-center py-12">
-                <CardContent>
-                  <p className="text-gray-500 mb-4">No materials uploaded yet</p>
-                  <label htmlFor="file-upload" className="cursor-pointer">
-                    <span className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors h-10 px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90">
-                      Upload Your First File
-                    </span>
-                  </label>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {uploads.map((upload) => (
-                  <Card key={upload.id}>
-                    <CardHeader>
-                      <CardTitle className="text-lg">{upload.file_name}</CardTitle>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className={`px-2 py-1 rounded-full text-xs ${getStatusBadge(upload.status)}`}>
-                          {upload.status}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {upload.file_type.toUpperCase()}
-                        </span>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-gray-500">
-                        Uploaded {new Date(upload.created_at).toLocaleDateString()}
-                      </p>
-                      {upload.file_type === 'video' && upload.video_duration_seconds && (
-                        <p className="text-sm text-gray-500 mt-1">
-                          Duration: {Math.floor(upload.video_duration_seconds / 60)}m {upload.video_duration_seconds % 60}s
-                        </p>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+              {/* Stats Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div className="bg-dark-card border border-gray-700 rounded-xl p-6">
+                  <h3 className="text-gray-400 text-sm mb-2">Current Streak</h3>
+                  <p className="text-4xl font-bold text-cyan-400" style={{ filter: 'drop-shadow(0 0 10px rgba(6,182,212,0.8))' }}>
+                    {analytics?.recent_attempts.length || 0} Days
+                  </p>
+                </div>
 
-        {activeTab === 'testing' && (
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Quiz & Testing</h2>
+                <div className="bg-dark-card border border-gray-700 rounded-xl p-6">
+                  <h3 className="text-gray-400 text-sm mb-2">Average Quiz Score</h3>
+                  <p className="text-4xl font-bold text-cyan-400" style={{ filter: 'drop-shadow(0 0 10px rgba(6,182,212,0.8))' }}>
+                    {analytics?.average_score?.toFixed(0) || 0}%
+                  </p>
+                </div>
 
-            {!generatedQuiz ? (
-              <div className="space-y-6">
-                {/* Upload Selection */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Select Materials for Quiz</CardTitle>
-                    <CardDescription>
-                      Choose the uploaded materials you want to be quizzed on (25 questions, 10 minutes)
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {uploads.filter(u => u.status === 'ready').length === 0 ? (
-                      <p className="text-gray-500 text-center py-4">
-                        No ready materials. Please upload and process some materials first.
-                      </p>
-                    ) : (
-                      <div className="space-y-3">
-                        {uploads.filter(u => u.status === 'ready').map((upload) => (
-                          <div key={upload.id} className="flex items-center space-x-3 p-3 border rounded-md hover:bg-gray-50">
-                            <input
-                              type="checkbox"
-                              id={`upload-${upload.id}`}
-                              checked={selectedUploadIds.includes(upload.id)}
-                              onChange={(e) => handleUploadSelection(upload.id, e.target.checked)}
-                              className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
-                            />
-                            <label htmlFor={`upload-${upload.id}`} className="flex-1 cursor-pointer">
-                              <p className="font-medium text-gray-900">{upload.file_name}</p>
-                              <p className="text-sm text-gray-500">
-                                {upload.file_type.toUpperCase()} • {new Date(upload.created_at).toLocaleDateString()}
-                              </p>
-                            </label>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Generate Quiz Button */}
-                <div className="flex justify-center">
-                  <Button
-                    onClick={handleGenerateQuiz}
-                    disabled={selectedUploadIds.length === 0 || generatingQuiz}
-                    size="lg"
-                  >
-                    {generatingQuiz ? 'Generating Quiz with Gemini...' : `Generate Quiz (${selectedUploadIds.length} selected)`}
-                  </Button>
+                <div className="bg-dark-card border border-gray-700 rounded-xl p-6">
+                  <h3 className="text-gray-400 text-sm mb-2">Materials Covered</h3>
+                  <p className="text-4xl font-bold text-cyan-400" style={{ filter: 'drop-shadow(0 0 10px rgba(6,182,212,0.8))' }}>
+                    {uploads.filter((u) => u.status === 'ready').length} / {uploads.length}
+                  </p>
                 </div>
               </div>
-            ) : (
-              <div className="space-y-6">
-                {/* Quiz Results */}
-                {quizResults ? (
-                  <div className="space-y-6">
-                    <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200">
-                      <CardHeader>
-                        <CardTitle className="text-3xl text-center">Quiz Complete! 🎉</CardTitle>
-                        <CardDescription className="text-center text-lg">
-                          Your Score: {quizResults.score}%
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="text-center">
-                        <div className="mb-6">
-                          <div className="text-6xl font-bold text-blue-600 mb-2">
-                            {quizResults.score}%
-                          </div>
-                          <p className="text-gray-600">
-                            {quizResults.correct_count} out of {quizResults.total_questions} correct
-                          </p>
-                        </div>
-                        <div className="flex gap-3 justify-center">
-                          <Button
-                            onClick={() => setReviewMode(!reviewMode)}
-                            size="lg"
-                            variant={reviewMode ? "outline" : "default"}
-                          >
-                            {reviewMode ? '🔊 Stop Voice Review' : '🎧 Review with Voice'}
-                          </Button>
-                          <Button onClick={() => setGeneratedQuiz(null)} size="lg" variant="outline">
-                            Generate New Quiz
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
 
-                    {/* Detailed Results */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Review Your Answers</CardTitle>
-                        <CardDescription>See explanations for each question</CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-6">
-                        {generatedQuiz?.questions.map((question, idx) => {
-                          const userAnswer = quizAnswers[question.id];
-                          const isCorrect = userAnswer === question.correct;
-
-                          return (
-                            <div
-                              key={question.id}
-                              className={`p-4 rounded-lg border-2 ${
-                                isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-                              }`}
-                            >
-                              <div className="flex items-start gap-3 mb-3">
-                                <span className="flex-shrink-0 w-8 h-8 rounded-full bg-white flex items-center justify-center font-semibold">
-                                  {idx + 1}
-                                </span>
-                                <div className="flex-1">
-                                  <p className="font-medium text-gray-900 mb-3">{question.question}</p>
-
-                                  <div className="space-y-2 mb-3">
-                                    {question.options.map((option, optIdx) => {
-                                      const isUserAnswer = userAnswer === optIdx;
-                                      const isCorrectAnswer = optIdx === question.correct;
-
-                                      return (
-                                        <div
-                                          key={optIdx}
-                                          className={`p-2 rounded ${
-                                            isCorrectAnswer
-                                              ? 'bg-green-200 font-semibold'
-                                              : isUserAnswer
-                                              ? 'bg-red-200'
-                                              : 'bg-white'
-                                          }`}
-                                        >
-                                          {isCorrectAnswer && '✓ '}
-                                          {isUserAnswer && !isCorrectAnswer && '✗ '}
-                                          {option}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-
-                                  <div className="bg-blue-50 border-l-4 border-blue-400 p-3 mt-3">
-                                    <div className="flex justify-between items-start mb-1">
-                                      <p className="text-sm font-semibold text-blue-900">Explanation:</p>
-                                      {reviewMode && (
-                                        <button
-                                          onClick={async () => {
-                                            try {
-                                              const feedbackText = isCorrect
-                                                ? `Correct! ${question.explanation}`
-                                                : `Incorrect. The correct answer is: ${question.options[question.correct]}. ${question.explanation}`;
-
-                                              const emotion = isCorrect ? 'congratulatory' : 'patient';
-                                              const audioBlob = await aiService.textToSpeech(feedbackText, emotion);
-                                              const audioUrl = URL.createObjectURL(audioBlob);
-                                              const audio = new Audio(audioUrl);
-                                              audio.play();
-                                              audio.onended = () => URL.revokeObjectURL(audioUrl);
-                                            } catch (error) {
-                                              console.error('Error playing voice:', error);
-                                            }
-                                          }}
-                                          className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition-colors"
-                                        >
-                                          🔊 Listen
-                                        </button>
-                                      )}
-                                    </div>
-                                    <p className="text-sm text-blue-800">{question.explanation}</p>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </CardContent>
-                    </Card>
+              {/* Charts Grid */}
+              {analytics && analytics.progress_over_time.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                  {/* Quiz Score Trends */}
+                  <div className="bg-dark-card border border-gray-700 rounded-xl p-6">
+                    <h3 className="text-lg font-semibold text-white mb-4">Quiz Score Trends</h3>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <LineChart data={analytics.progress_over_time.slice(-10)}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <XAxis 
+                          dataKey="week" 
+                          stroke="#9ca3af"
+                          tickFormatter={(_, index) => `W${index + 1}`}
+                        />
+                        <YAxis stroke="#9ca3af" />
+                        <Tooltip 
+                          contentStyle={{
+                            backgroundColor: '#1e293b',
+                            border: '1px solid #374151',
+                            borderRadius: '8px',
+                            color: '#fff'
+                          }}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="score" 
+                          stroke="#ec4899" 
+                          strokeWidth={3}
+                          dot={{ fill: '#ec4899', r: 5 }}
+                          activeDot={{ r: 7, fill: '#ec4899' }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
                   </div>
-                ) : !quizStarted ? (
-                  /* Quiz Start Screen */
-                  <Card className="text-center py-12">
-                    <CardHeader>
-                      <CardTitle className="text-2xl">Ready to Start Your Quiz?</CardTitle>
-                      <CardDescription className="text-lg mt-2">
-                        {generatedQuiz?.questions.length} questions • 10 minutes
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 max-w-md mx-auto">
-                        <p className="text-sm text-yellow-800 font-medium">
-                          ⏱️ The timer will start immediately when you click Start Quiz
-                        </p>
-                      </div>
-                      <Button onClick={handleStartQuiz} size="lg" className="mt-4">
-                        Start Quiz
-                      </Button>
-                      <div className="mt-4">
-                        <Button variant="outline" onClick={() => setGeneratedQuiz(null)}>
-                          Generate Different Quiz
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  /* Quiz Taking Interface */
-                  <div className="space-y-6">
-                    {/* Timer Bar */}
-                    <Card className={`sticky top-4 z-10 ${timeRemaining < 60 ? 'bg-red-50 border-red-300' : 'bg-blue-50 border-blue-300'}`}>
-                      <CardContent className="py-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-sm font-medium text-gray-600">Time Remaining</p>
-                            <p className={`text-3xl font-bold ${timeRemaining < 60 ? 'text-red-600' : 'text-blue-600'}`}>
-                              {formatTime(timeRemaining)}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-sm font-medium text-gray-600">Progress</p>
-                            <p className="text-lg font-semibold text-gray-900">
-                              {Object.keys(quizAnswers).length} / {generatedQuiz?.questions.length}
-                            </p>
-                          </div>
-                        </div>
-                        {/* Progress bar */}
-                        <div className="w-full bg-gray-200 rounded-full h-2 mt-3">
-                          <div
-                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                            style={{
-                              width: `${(Object.keys(quizAnswers).length / (generatedQuiz?.questions.length || 1)) * 100}%`
-                            }}
-                          />
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    {/* Questions */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Answer All Questions</CardTitle>
-                        <CardDescription>Select one answer for each question</CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-8">
-                        {generatedQuiz?.questions.map((question, idx) => (
-                          <div key={question.id} className="pb-6 border-b last:border-b-0">
-                            <div className="flex items-start gap-3">
-                              <span className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-semibold">
-                                {idx + 1}
-                              </span>
-                              <div className="flex-1">
-                                <p className="font-medium text-gray-900 mb-4">{question.question}</p>
-                                <div className="space-y-2">
-                                  {question.options.map((option, optIdx) => (
-                                    <label
-                                      key={optIdx}
-                                      className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-all ${
-                                        quizAnswers[question.id] === optIdx
-                                          ? 'border-blue-500 bg-blue-50'
-                                          : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
-                                      }`}
-                                    >
-                                      <input
-                                        type="radio"
-                                        name={`question-${question.id}`}
-                                        value={optIdx}
-                                        checked={quizAnswers[question.id] === optIdx}
-                                        onChange={() => handleAnswerSelect(question.id, optIdx)}
-                                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                                      />
-                                      <span className="ml-3 text-gray-700">{option}</span>
-                                    </label>
-                                  ))}
-                                </div>
-
-                                {/* Confidence Slider */}
-                                {quizAnswers[question.id] !== undefined && (
-                                  <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                      How confident are you? {quizConfidence[question.id] ? `(${quizConfidence[question.id]}/5)` : ''}
-                                    </label>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-xs text-gray-500">Not Sure</span>
-                                      <input
-                                        type="range"
-                                        min="1"
-                                        max="5"
-                                        value={quizConfidence[question.id] || 3}
-                                        onChange={(e) => setQuizConfidence(prev => ({
-                                          ...prev,
-                                          [question.id]: parseInt(e.target.value)
-                                        }))}
-                                        className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                                      />
-                                      <span className="text-xs text-gray-500">Very Sure</span>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </CardContent>
-                    </Card>
-
-                    {/* Submit Button */}
-                    <div className="flex justify-center gap-4 pb-8">
-                      <Button
-                        onClick={handleSubmitQuiz}
-                        disabled={submittingQuiz || Object.keys(quizAnswers).length === 0}
-                        size="lg"
-                        className="min-w-[200px]"
-                      >
-                        {submittingQuiz ? 'Submitting...' : 'Submit Quiz'}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          if (confirm('Are you sure you want to quit? Your progress will be lost.')) {
-                            setGeneratedQuiz(null);
-                            setQuizStarted(false);
-                          }
-                        }}
-                      >
-                        Quit Quiz
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'learner' && (
-          <div>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-900">Study Mode</h2>
-
-              {/* Material Selector */}
-              {uploads.filter(u => u.status === 'ready').length > 0 && (
-                <select
-                  value={selectedMaterial?.id || ''}
-                  onChange={(e) => {
-                    const upload = uploads.find(u => u.id === e.target.value);
-                    setSelectedMaterial(upload || null);
-                  }}
-                  className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {uploads.filter(u => u.status === 'ready').map(upload => (
-                    <option key={upload.id} value={upload.id}>
-                      {upload.file_name}
-                    </option>
-                  ))}
-                </select>
+                </div>
               )}
             </div>
 
-            {uploads.filter(u => u.status === 'ready').length === 0 ? (
-              <Card className="text-center py-12">
-                <CardContent>
-                  <p className="text-gray-500 mb-4">
-                    No materials available yet. Upload some PDFs or videos to get started!
-                  </p>
-                  <Button onClick={() => setActiveTab('uploads')}>Go to Uploads</Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="flex gap-4 h-[calc(100vh-280px)]">
-                {/* Material Viewer (80%) */}
-                <div className="flex-1 bg-white rounded-lg border overflow-hidden">
-                  {selectedMaterial && (
-                    <>
-                      {selectedMaterial.file_type === 'pdf' ? (
-                        <div className="h-full flex flex-col">
-                          <div className="bg-gray-100 px-4 py-2 border-b flex items-center justify-between">
-                            <p className="text-sm font-medium text-gray-700">
-                              📄 {selectedMaterial.file_name}
-                            </p>
-                            <a
-                              href={`http://localhost:8000/api/v1/courses/${selectedMaterial.course_id}/files/${selectedMaterial.id}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-blue-600 hover:text-blue-800"
-                            >
-                              Open in new tab →
-                            </a>
-                          </div>
-                          <div className="flex-1 bg-gray-50">
-                            {materialFileUrl ? (
-                              <iframe
-                                src={materialFileUrl}
-                                className="w-full h-full border-0"
-                                title={selectedMaterial.file_name}
-                              />
-                            ) : (
-                              <div className="flex items-center justify-center h-full">
-                                <p className="text-gray-500">Loading file...</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ) : selectedMaterial.file_type === 'video' ? (
-                        <div className="h-full flex flex-col">
-                          <div className="bg-gray-100 px-4 py-2 border-b">
-                            <p className="text-sm font-medium text-gray-700">
-                              Video: {selectedMaterial.file_name}
-                            </p>
-                          </div>
-                          <div className="flex-1 bg-black flex items-center justify-center">
-                            <div className="text-center text-white p-8">
-                              <svg className="mx-auto h-16 w-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              <h3 className="text-lg font-medium mb-2">Video Processed</h3>
-                              <p className="text-sm text-gray-300 mb-4">
-                                Transcript and timestamps are available to the AI tutor
-                              </p>
-                              {selectedMaterial.video_duration_seconds && (
-                                <p className="text-xs text-gray-400">
-                                  Duration: {Math.floor(selectedMaterial.video_duration_seconds / 60)}m {selectedMaterial.video_duration_seconds % 60}s
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ) : null}
-                    </>
-                  )}
+            {/* AI Study Recommendations */}
+            {analytics && analytics.total_quizzes > 0 && (
+              <div className="bg-dark-card border border-gray-700 rounded-xl p-6 mb-8">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-semibold text-white">🎯 Study Recommendations</h2>
+                  <button 
+                    onClick={loadStudyPlan} 
+                    disabled={loadingStudyPlan}
+                    className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-pink-500 rounded-lg font-medium hover:shadow-glow-mixed transition-all disabled:opacity-50"
+                  >
+                    {loadingStudyPlan ? 'Loading...' : '🔄 Refresh'}
+                  </button>
                 </div>
 
-                {/* AI Chat (20%) */}
-                <div className="w-80 bg-white rounded-lg border flex flex-col">
-                  <div className="bg-blue-600 text-white px-4 py-3 rounded-t-lg">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="font-semibold">AI Tutor</h3>
-                        <p className="text-xs text-blue-100">Ask questions about your materials</p>
-                      </div>
-                      {/* Voice Mode Toggle */}
-                      <button
-                        onClick={() => setVoiceModeEnabled(!voiceModeEnabled)}
-                        className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                          voiceModeEnabled
-                            ? 'bg-white text-blue-600'
-                            : 'bg-blue-700 text-white hover:bg-blue-800'
-                        }`}
-                        title="Toggle voice mode"
-                      >
-                        {voiceModeEnabled ? '🔊 Voice ON' : '🔈 Voice OFF'}
-                      </button>
-                    </div>
-                  </div>
+                {studyPlan ? (
+                  <div className="text-gray-300">
+                    <p className="mb-4">{studyPlan.study_plan}</p>
 
-                  {/* Chat Messages */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {chatMessages.length === 0 ? (
-                      <div className="text-center text-gray-500 text-sm mt-8">
-                        <p className="mb-2">👋 Hi! I'm your AI tutor.</p>
-                        <p>Ask me anything about your course materials!</p>
-                      </div>
-                    ) : (
-                      chatMessages.map((msg, idx) => (
-                        <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                          <div className={`max-w-[85%] rounded-lg px-4 py-2 ${
-                            msg.role === 'user'
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-gray-100 text-gray-900'
-                          }`}>
-                            <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                    {sendingMessage && (
-                      <div className="flex justify-start">
-                        <div className="bg-gray-100 rounded-lg px-4 py-2">
-                          <div className="flex space-x-2">
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                          </div>
-                        </div>
+                    {studyPlan.recommendations && studyPlan.recommendations.length > 0 && (
+                      <div className="mb-4">
+                        <p className="text-sm font-semibold text-white mb-2">Next Steps:</p>
+                        <ul className="list-disc pl-6 space-y-1">
+                          {studyPlan.recommendations.map((rec: string, idx: number) => (
+                            <li key={idx} className="text-gray-400">{rec}</li>
+                          ))}
+                        </ul>
                       </div>
                     )}
-                  </div>
 
-                  {/* Chat Input */}
-                  <div className="border-t p-4">
-                    {isPlayingAudio && (
-                      <div className="mb-3 flex items-center justify-between bg-blue-50 px-3 py-2 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <div className="flex space-x-1">
-                            <div className="w-1 h-4 bg-blue-600 rounded-full animate-pulse"></div>
-                            <div className="w-1 h-6 bg-blue-600 rounded-full animate-pulse" style={{animationDelay: '0.1s'}}></div>
-                            <div className="w-1 h-4 bg-blue-600 rounded-full animate-pulse" style={{animationDelay: '0.2s'}}></div>
-                          </div>
-                          <span className="text-sm text-blue-700 font-medium">Playing response...</span>
-                        </div>
-                        <button
-                          onClick={stopAudio}
-                          className="text-blue-600 hover:text-blue-800 font-medium text-sm"
-                        >
-                          Stop
-                        </button>
+                    {studyPlan.priority_topics && studyPlan.priority_topics.length > 0 && (
+                      <div className="mb-4">
+                        <p className="text-sm font-semibold text-white mb-2">Priority Topics:</p>
+                        <p className="text-gray-400">{studyPlan.priority_topics.join(', ')}</p>
                       </div>
                     )}
-                    <div className="flex gap-2">
-                      {voiceModeEnabled && (
-                        <>
-                          {!isRecording ? (
-                            <button
-                              onClick={startVoiceRecording}
-                              disabled={sendingMessage}
-                              className="px-3 py-2 rounded-md text-white font-medium transition-colors bg-green-600 hover:bg-green-700 disabled:bg-gray-300"
-                              title="Click to speak"
-                            >
-                              🎤
-                            </button>
-                          ) : (
-                            <button
-                              onClick={stopVoiceRecording}
-                              className="px-3 py-2 rounded-md text-white font-medium transition-colors bg-red-600 hover:bg-red-700 animate-pulse"
-                              title="Stop recording"
-                            >
-                              ⏹️ Stop
-                            </button>
-                          )}
-                        </>
-                      )}
-                      <input
-                        type="text"
-                        value={chatInput}
-                        onChange={(e) => setChatInput(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && !sendingMessage && handleSendMessage()}
-                        placeholder={voiceModeEnabled ? "Speak or type..." : "Type your question..."}
-                        disabled={sendingMessage || isRecording}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                      />
-                      <Button
-                        onClick={handleSendMessage}
-                        disabled={!chatInput.trim() || sendingMessage || isRecording}
-                        size="sm"
-                      >
-                        {voiceModeEnabled ? '🔊 Send' : 'Send'}
-                      </Button>
-                    </div>
-                    {voiceModeEnabled && (
-                      <p className="text-xs text-gray-500 mt-2">
-                        💡 Click the microphone to speak (click Stop to end recording), or type your message
+
+                    {studyPlan.ai_platforms_used && studyPlan.ai_platforms_used.length > 0 && (
+                      <p className="text-xs text-gray-500 mt-3">
+                        🏆 Powered by: {studyPlan.ai_platforms_used.join(' + ')}
                       </p>
                     )}
                   </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-400">
+                    <p className="mb-2">Click "Refresh" to generate personalized study recommendations</p>
+                    <p className="text-xs text-gray-500">Uses Snowflake Cortex AI + DigitalOcean Gradient AI</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Learning View - PDF Viewer + Voice Chat */}
+        {view === 'learning' && (
+          <div className="fixed inset-0 bg-dark-bg z-50">
+            {/* Header */}
+            <header className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+              <button 
+                onClick={() => setView('overview')}
+                className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+              </button>
+              <h1 className="text-lg font-semibold text-white">
+                {selectedPdfForViewing ? selectedPdfForViewing.file_name : 'Select a PDF'}
+              </h1>
+              <div className="w-9"></div>
+            </header>
+
+            {readyPdfs.length === 0 ? (
+              <div className="flex items-center justify-center h-[calc(100vh-73px)]">
+                <div className="bg-dark-card border border-gray-700 rounded-xl p-8 text-center">
+                  <p className="text-gray-400">No ready PDFs. Upload and process PDF materials first.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex h-[calc(100vh-73px)]">
+                {/* Left Column - PDF Viewer (70%) */}
+                <div className="w-[70%] border-r border-gray-700 flex flex-col">
+                  {/* PDF Selector */}
+                  <div className="p-4 border-b border-gray-700">
+                    <select
+                      value={selectedPdfForViewing?.id || ''}
+                      onChange={(e) => {
+                        const selected = readyPdfs.find((p) => p.id === e.target.value);
+                        setSelectedPdfForViewing(selected || null);
+                      }}
+                      className="w-full px-4 py-2 bg-gray-800 border border-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    >
+                      <option value="">Select a PDF to view</option>
+                      {readyPdfs.map((pdf) => (
+                        <option key={pdf.id} value={pdf.id}>
+                          {pdf.file_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* PDF Viewer */}
+                  <div className="flex-1 flex items-center justify-center overflow-auto bg-gray-900">
+                    {loadingPdf ? (
+                      <p className="text-gray-500">Loading PDF...</p>
+                    ) : selectedPdfForViewing && pdfBlobUrl ? (
+                      <iframe
+                        src={pdfBlobUrl}
+                        className="w-full h-full border-none"
+                        title={selectedPdfForViewing.file_name}
+                      />
+                    ) : selectedPdfForViewing ? (
+                      <p className="text-gray-500">Loading PDF...</p>
+                    ) : (
+                      <p className="text-gray-500">Select a PDF to view</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Column - AI Chat (30%) */}
+                <div className="w-[30%] relative">
+                  {!isVoiceChatActive ? (
+                    <div className="w-full h-full bg-dark-card flex flex-col">
+                      {/* Chat Header */}
+                      <div className="p-4 border-b border-gray-700">
+                        <h2 className="font-semibold bg-gradient-to-r from-cyan-400 to-pink-500 bg-clip-text text-transparent">
+                          AI Assistant
+                        </h2>
+                      </div>
+                      {/* Message History */}
+                      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                        {chatMessages.length === 0 ? (
+                          <div className="bg-gray-800 rounded-lg p-3">
+                            <p className="text-sm text-gray-300">
+                              Hi! I'm here to help you understand this material. Ask me anything!
+                            </p>
+                          </div>
+                        ) : (
+                          chatMessages.map((msg, idx) => (
+                            <div 
+                              key={idx} 
+                              className={`rounded-lg p-3 ${msg.role === 'user' ? 'bg-cyan-500/20 ml-4' : 'bg-gray-800'}`}
+                            >
+                              <p className="text-sm text-gray-300 whitespace-pre-wrap">
+                                {msg.content}
+                              </p>
+                            </div>
+                          ))
+                        )}
+                        {chatLoading && (
+                          <div className="bg-gray-800 rounded-lg p-3">
+                            <p className="text-sm text-gray-400">Thinking...</p>
+                          </div>
+                        )}
+                        <div ref={chatEndRef} />
+                      </div>
+                      {/* Input Area */}
+                      <div className="p-4 border-t border-gray-700">
+                        <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            value={chatInput}
+                            onChange={(e) => setChatInput(e.target.value)}
+                            onKeyPress={(e) => e.key === 'Enter' && !chatLoading && handleSendMessage()}
+                            placeholder="Ask a question..." 
+                            disabled={chatLoading}
+                            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50 text-white placeholder-gray-500"
+                          />
+                          <button 
+                            onClick={() => setIsVoiceChatActive(true)}
+                            className="p-2 bg-gradient-to-r from-cyan-500 to-pink-500 rounded-lg hover:opacity-90 transition-opacity"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-full bg-dark-card relative flex items-center justify-center">
+                      {/* Exit Button */}
+                      <button 
+                        onClick={() => {
+                          setIsVoiceChatActive(false);
+                          if (isRecording) {
+                            const voiceService = voiceServiceRef.current;
+                            voiceService.stopListening();
+                            setIsRecording(false);
+                          }
+                          if (isPlayingAudio) {
+                            const audioPlayer = audioPlayerRef.current;
+                            audioPlayer.stopAudio();
+                            setIsPlayingAudio(false);
+                          }
+                        }}
+                        className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors z-10"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                      {/* Animated Bubble with Ripples */}
+                      <div className="relative">
+                        {/* Ripple Effects */}
+                        <div 
+                          className={`absolute inset-0 rounded-full animate-ping ${
+                            isRecording ? 'bg-cyan-500/20' : 'bg-pink-500/20'
+                          }`}
+                          style={{ animationDuration: '2s' }}
+                        />
+                        <div 
+                          className={`absolute inset-0 rounded-full animate-ping ${
+                            isRecording ? 'bg-cyan-500/10' : 'bg-pink-500/10'
+                          }`}
+                          style={{ animationDuration: '3s', animationDelay: '0.5s' }}
+                        />
+                        {/* Main Bubble */}
+                        <button 
+                          onClick={handleVoiceChat}
+                          className={`relative w-32 h-32 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 animate-bounce ${
+                            isRecording 
+                              ? 'bg-cyan-500/30 shadow-[0_0_40px_rgba(6,182,212,0.5)]' 
+                              : 'bg-pink-500/30 shadow-[0_0_40px_rgba(236,72,153,0.5)]'
+                          }`}
+                          style={{ animationDuration: '2s' }}
+                        >
+                          <svg className={`w-12 h-12 ${isRecording ? 'text-cyan-400' : 'text-pink-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </button>
+                      </div>
+                      {/* Status Text */}
+                      <div className="absolute bottom-8 text-center">
+                        <p className="text-sm text-gray-400">
+                          {isRecording ? 'Listening...' : isPlayingAudio ? 'AI Speaking...' : 'Click to start'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {activeTab === 'analytics' && (
+        {/* Quiz Selection View */}
+        {view === 'quiz-select' && (
+          <div className="max-w-4xl mx-auto">
+            {/* Header */}
+            <div className="mb-8">
+              <button 
+                onClick={() => setView('overview')}
+                className="flex items-center gap-2 text-gray-400 hover:text-teal-400 transition-colors mb-6 group"
+              >
+                <svg className="w-5 h-5 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                <span>Back to Course</span>
+              </button>
+
+              <h1 className="text-5xl font-bold bg-gradient-to-r from-teal-400 to-fuchsia-500 bg-clip-text text-transparent mb-2">
+                Test Your Skills
+              </h1>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap gap-4 mb-8">
+              <button 
+                onClick={handleGenerateQuiz}
+                disabled={selectedPdfsForQuiz.length === 0 || generatingQuiz}
+                className="px-6 py-3 rounded-lg font-semibold bg-gradient-to-r from-teal-500 to-fuchsia-500 hover:shadow-[0_0_20px_rgba(20,184,166,0.4),0_0_20px_rgba(217,70,239,0.4)] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none"
+              >
+                {generatingQuiz 
+                  ? 'Generating Quiz...' 
+                  : `Start Quiz ${selectedPdfsForQuiz.length > 0 ? `(${selectedPdfsForQuiz.length})` : ''}`
+                }
+              </button>
+            </div>
+
+            {/* Material List */}
+            <div className="space-y-3 mb-8">
+              {readyPdfs.map((upload) => (
+                <div 
+                  key={upload.id} 
+                  className="flex items-center gap-4 p-4 bg-[#1a1a2e] border border-gray-800 rounded-lg hover:border-gray-700 transition-colors"
+                >
+                  <input 
+                    type="checkbox" 
+                    id={`quiz-${upload.id}`}
+                    checked={selectedPdfsForQuiz.includes(upload.id)}
+                    onChange={() => togglePdfSelection(upload.id)}
+                    className="w-5 h-5 rounded border-gray-600 bg-gray-900 text-teal-500 focus:ring-2 focus:ring-teal-500 focus:ring-offset-0 cursor-pointer"
+                  />
+
+                  <label 
+                    htmlFor={`quiz-${upload.id}`}
+                    className="flex-1 text-white font-medium cursor-pointer"
+                  >
+                    {upload.file_name}
+                  </label>
+
+                  <span className="px-3 py-1 rounded-full text-sm font-medium text-teal-400 shadow-[0_0_12px_rgba(20,184,166,0.5)] bg-gray-900/50 border border-gray-800">
+                    Ready
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* AI Platform Options */}
+            <div className="bg-dark-card border border-gray-700 rounded-xl p-6">
+              <h3 className="text-xl font-semibold text-white mb-4">🏆 AI Platform Options</h3>
+
+              <label className="flex items-center gap-3 mb-4 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={useHybridQuiz}
+                  onChange={(e) => setUseHybridQuiz(e.target.checked)}
+                  className="w-5 h-5 rounded border-gray-600 bg-gray-900 text-teal-500 focus:ring-2 focus:ring-teal-500 cursor-pointer"
+                />
+                <span className="text-white font-medium group-hover:text-teal-400 transition-colors">
+                  Use Hybrid AI (Snowflake + DigitalOcean + Gemini)
+                </span>
+              </label>
+
+              {useHybridQuiz && (
+                <div className="ml-8 space-y-3 mb-4">
+                  <label className="flex items-center gap-3 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={useDigitalOcean}
+                      onChange={(e) => setUseDigitalOcean(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-600 bg-gray-900 text-cyan-500 focus:ring-2 focus:ring-cyan-500 cursor-pointer"
+                    />
+                    <span className="text-gray-300 text-sm group-hover:text-cyan-400 transition-colors">
+                      DigitalOcean Gradient AI (Llama 3.1 70B on GPU)
+                    </span>
+                  </label>
+
+                  <label className="flex items-center gap-3 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={useSnowflake}
+                      onChange={(e) => setUseSnowflake(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-600 bg-gray-900 text-pink-500 focus:ring-2 focus:ring-pink-500 cursor-pointer"
+                    />
+                    <span className="text-gray-300 text-sm group-hover:text-pink-400 transition-colors">
+                      Snowflake Cortex AI (Question Quality Analysis)
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              <p className="text-sm text-gray-400 mt-4">
+                {useHybridQuiz
+                  ? '✨ Hybrid mode uses multiple AI platforms for best quiz quality'
+                  : '⚡ Standard mode uses Gemini AI only'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Quiz View */}
+        {view === 'quiz' && (
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Course Analytics</h2>
+            <button
+              onClick={() => {
+                setView('overview');
+                setQuiz(null);
+                setQuizResults(null);
+              }}
+              className="mb-3"
+            >
+              ← BACK TO OVERVIEW
+            </button>
 
-            {loadingAnalytics ? (
-              <div className="flex justify-center items-center py-12">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-              </div>
-            ) : !analytics || analytics.total_attempts === 0 ? (
-              <Card className="text-center py-12">
-                <CardContent>
-                  <p className="text-gray-500 mb-4">
-                    No quiz attempts yet. Take some quizzes to see your analytics!
-                  </p>
-                  <Button onClick={() => setActiveTab('testing')}>Go to Testing</Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-6">
-                {/* Overview Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-600">Average Score</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-3xl font-bold text-blue-600">{analytics.average_score}%</p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-600">Total Attempts</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-3xl font-bold text-gray-900">{analytics.total_attempts}</p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-600">Highest Score</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-3xl font-bold text-green-600">{analytics.highest_score}%</p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium text-gray-600">Total Quizzes</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-3xl font-bold text-gray-900">{analytics.total_quizzes}</p>
-                    </CardContent>
-                  </Card>
+            {quiz && !quizResults && (
+              <>
+                <div className="card mb-3">
+                  <div className="flex flex-between" style={{ alignItems: 'center' }}>
+                    <h2 style={{ marginBottom: 0 }}>⏱️ TIME: {formatTime(timeRemaining)}</h2>
+                    <p style={{ marginBottom: 0, fontSize: '18px', fontWeight: 'bold' }}>
+                      {quiz.questions.length} QUESTIONS
+                    </p>
+                  </div>
                 </div>
 
-                {/* Progress Chart */}
-                {analytics.progress_over_time.length > 0 && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Progress Over Time</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2">
-                        {analytics.progress_over_time.map((point, idx) => (
-                          <div key={idx} className="flex items-center gap-3">
-                            <span className="text-sm text-gray-600 w-32">
-                              {new Date(point.date).toLocaleDateString()}
-                            </span>
-                            <div className="flex-1 bg-gray-200 rounded-full h-4 relative overflow-hidden">
-                              <div
-                                className="bg-blue-600 h-full rounded-full transition-all"
-                                style={{ width: `${point.score}%` }}
-                              ></div>
-                              <span className="absolute right-2 top-0 text-xs font-medium text-gray-700">
-                                {point.score}%
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
+                {aiPlatformsUsed.length > 0 && (
+                  <div className="card mb-3" style={{ padding: '12px' }}>
+                    <p style={{ fontSize: '12px', marginBottom: 0 }}>
+                      🏆 <strong>POWERED BY:</strong> {aiPlatformsUsed.join(' + ')}
+                    </p>
+                  </div>
                 )}
+              </>
+            )}
 
-                {/* Topics Analysis */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-red-600">⚠️ Areas to Improve</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {analytics.weak_topics.length > 0 ? (
-                        <ul className="space-y-2">
-                          {analytics.weak_topics.map((topic, idx) => (
-                            <li key={idx} className="flex items-center gap-2 text-sm">
-                              <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                              {topic}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-gray-500 text-sm">Great job! No weak areas identified.</p>
-                      )}
-                    </CardContent>
-                  </Card>
+            {quiz && !quizResults && (
+              <div>
+                {quiz.questions.map((question, idx) => (
+                  <div key={question.id} className="card">
+                    <h3>
+                      Q{idx + 1}. {question.question}
+                    </h3>
 
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-green-600">✅ Strong Areas</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {analytics.strong_topics.length > 0 ? (
-                        <ul className="space-y-2">
-                          {analytics.strong_topics.map((topic, idx) => (
-                            <li key={idx} className="flex items-center gap-2 text-sm">
-                              <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                              {topic}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-gray-500 text-sm">Take more quizzes to identify your strengths!</p>
-                      )}
-                    </CardContent>
-                  </Card>
+                    {question.options.map((option, optIdx) => (
+                      <label
+                        key={optIdx}
+                        style={{ display: 'block', marginBottom: '8px', cursor: 'pointer' }}
+                      >
+                        <input
+                          type="radio"
+                          name={`question-${question.id}`}
+                          checked={selectedAnswers[question.id] === optIdx}
+                          onChange={() =>
+                            setSelectedAnswers({ ...selectedAnswers, [question.id]: optIdx })
+                          }
+                          style={{ marginRight: '8px', width: 'auto' }}
+                        />
+                        {option}
+                      </label>
+                    ))}
+                  </div>
+                ))}
+
+                <button onClick={handleSubmitQuiz} style={{ width: '100%' }}>
+                  SUBMIT QUIZ
+                </button>
+              </div>
+            )}
+
+            {quizResults && (
+              <div>
+                <div className="card">
+                  <h2>QUIZ RESULTS</h2>
+                  <p style={{ fontSize: '24px', fontWeight: 'bold' }}>
+                    SCORE: {quizResults.score.toFixed(1)}% ({quizResults.correct_answers}/
+                    {quizResults.total_questions})
+                  </p>
+                  <p style={{ opacity: 0.6 }}>You can attempt another quiz in 20 minutes.</p>
                 </div>
 
-                {/* Recent Attempts */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Recent Quiz Attempts</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {analytics.recent_attempts.map((attempt) => (
-                        <div key={attempt.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <div className="flex-1">
-                            <p className="font-medium text-sm">{new Date(attempt.completed_at).toLocaleString()}</p>
-                            {attempt.time_taken_seconds && (
-                              <p className="text-xs text-gray-600">Time: {Math.floor(attempt.time_taken_seconds / 60)}m {attempt.time_taken_seconds % 60}s</p>
-                            )}
-                          </div>
-                          <div className={`text-2xl font-bold ${
-                            attempt.score >= 80 ? 'text-green-600' :
-                            attempt.score >= 60 ? 'text-yellow-600' :
-                            'text-red-600'
-                          }`}>
-                            {attempt.score}%
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
+                {quizResults.results.map((result: any, idx: number) => (
+                  <div key={result.question_id} className="card">
+                    <h3>
+                      Q{idx + 1}. {result.question} {result.is_correct ? '✓' : '✗'}
+                    </h3>
+
+                    {result.options.map((option: string, optIdx: number) => (
+                      <p
+                        key={optIdx}
+                        style={{
+                          marginLeft: '16px',
+                          fontWeight:
+                            optIdx === result.correct_answer || optIdx === result.selected_answer
+                              ? 'bold'
+                              : 'normal',
+                          textDecoration:
+                            optIdx === result.selected_answer && !result.is_correct
+                              ? 'line-through'
+                              : 'none',
+                        }}
+                      >
+                        {optIdx === result.correct_answer && '✓ '}
+                        {option}
+                      </p>
+                    ))}
+
+                    <p className="mt-2" style={{ opacity: 0.8 }}>
+                      EXPLANATION: {result.explanation}
+                    </p>
+                  </div>
+                ))}
               </div>
             )}
           </div>
