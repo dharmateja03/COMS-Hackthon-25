@@ -55,26 +55,30 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen bg-dark-bg flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading courses...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-400 mx-auto"></div>
+          <p className="mt-4 text-gray-400">Loading courses...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-dark-bg">
       {/* Header */}
-      <header className="bg-white border-b">
+      <header className="bg-dark-bg border-b border-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Classroom AI</h1>
-              <p className="text-sm text-gray-600">Welcome, {user?.email}</p>
+              <h1 className="text-2xl font-bold gradient-text">Classroom AI</h1>
+              <p className="text-sm text-gray-400">Welcome, {user?.email}</p>
             </div>
-            <Button variant="outline" onClick={logout}>
+            <Button
+              variant="outline"
+              onClick={logout}
+              className="border-gray-700 text-gray-300 hover:bg-gray-800 hover:text-white"
+            >
               Sign Out
             </Button>
           </div>
@@ -84,18 +88,24 @@ export default function Dashboard() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-3xl font-bold text-gray-900">My Courses</h2>
-          <Button onClick={() => setShowCreateModal(true)}>
+          <h2 className="text-4xl font-bold gradient-text">My Courses</h2>
+          <Button
+            onClick={() => setShowCreateModal(true)}
+            className="gradient-bg hover:shadow-glow-mixed transition-all duration-300"
+          >
             + Create Course
           </Button>
         </div>
 
         {/* Courses Grid */}
         {courses.length === 0 ? (
-          <Card className="text-center py-12">
+          <Card className="text-center py-12 bg-dark-card border-gray-700">
             <CardContent>
-              <p className="text-gray-500 mb-4">No courses yet</p>
-              <Button onClick={() => setShowCreateModal(true)}>
+              <p className="text-gray-400 mb-4">No courses yet</p>
+              <Button
+                onClick={() => setShowCreateModal(true)}
+                className="gradient-bg hover:shadow-glow-mixed transition-all duration-300"
+              >
                 Create Your First Course
               </Button>
             </CardContent>
@@ -105,12 +115,12 @@ export default function Dashboard() {
             {courses.map((course) => (
               <Card
                 key={course.id}
-                className="hover:shadow-lg transition-shadow cursor-pointer"
+                className="bg-dark-card border-gray-700 hover:border-cyan-400 hover:shadow-glow-mixed transition-all duration-300 cursor-pointer hover:-translate-y-1"
                 onClick={() => navigate(`/course/${course.id}`)}
               >
                 <CardHeader>
-                  <CardTitle>{course.name}</CardTitle>
-                  <CardDescription>
+                  <CardTitle className="text-white hover:gradient-text transition-all duration-300">{course.name}</CardTitle>
+                  <CardDescription className="text-gray-400">
                     {course.description || 'No description'}
                   </CardDescription>
                 </CardHeader>
@@ -127,18 +137,18 @@ export default function Dashboard() {
 
       {/* Create Course Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-md">
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+          <Card className="w-full max-w-md bg-dark-card border-gray-700">
             <CardHeader>
-              <CardTitle>Create New Course</CardTitle>
-              <CardDescription>
+              <CardTitle className="gradient-text">Create New Course</CardTitle>
+              <CardDescription className="text-gray-400">
                 Add a new course to your dashboard
               </CardDescription>
             </CardHeader>
             <form onSubmit={handleCreateCourse}>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <label htmlFor="courseName" className="text-sm font-medium">
+                  <label htmlFor="courseName" className="text-sm font-medium text-gray-300">
                     Course Name *
                   </label>
                   <Input
@@ -148,10 +158,11 @@ export default function Dashboard() {
                     onChange={(e) => setNewCourseName(e.target.value)}
                     required
                     disabled={creating}
+                    className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500 focus:border-cyan-400 focus:ring-cyan-400"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label htmlFor="courseDescription" className="text-sm font-medium">
+                  <label htmlFor="courseDescription" className="text-sm font-medium text-gray-300">
                     Description (optional)
                   </label>
                   <Input
@@ -160,6 +171,7 @@ export default function Dashboard() {
                     value={newCourseDescription}
                     onChange={(e) => setNewCourseDescription(e.target.value)}
                     disabled={creating}
+                    className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500 focus:border-cyan-400 focus:ring-cyan-400"
                   />
                 </div>
               </CardContent>
@@ -169,10 +181,15 @@ export default function Dashboard() {
                   variant="outline"
                   onClick={() => setShowCreateModal(false)}
                   disabled={creating}
+                  className="border-gray-700 text-gray-300 hover:bg-gray-800 hover:text-white"
                 >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={creating}>
+                <Button
+                  type="submit"
+                  disabled={creating}
+                  className="gradient-bg hover:shadow-glow-mixed transition-all duration-300"
+                >
                   {creating ? 'Creating...' : 'Create Course'}
                 </Button>
               </div>

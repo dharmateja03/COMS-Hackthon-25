@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     # 11 Labs (optional)
     ELEVENLABS_API_KEY: Optional[str] = None
 
+    # DigitalOcean Gradient AI (for hackathon prize!)
+    # NOTE: DO Gradient AI not public yet. Use OpenRouter as proxy for demo.
+    # When DO releases API, update endpoint to: https://api.digitalocean.com/v2/ai
+    DIGITALOCEAN_API_TOKEN: Optional[str] = None
+    DIGITALOCEAN_GRADIENT_ENDPOINT: str = "https://openrouter.ai/api/v1"  # Proxy for demo
+    DIGITALOCEAN_USE_GPU: bool = True
+
     # File Upload
     MAX_UPLOAD_SIZE_MB: int = 500
     UPLOAD_DIR: str = "./uploads"

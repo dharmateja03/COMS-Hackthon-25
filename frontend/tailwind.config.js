@@ -26,6 +26,16 @@ export default {
         'popover-foreground': 'hsl(var(--popover-foreground))',
         card: 'hsl(var(--card))',
         'card-foreground': 'hsl(var(--card-foreground))',
+        // Custom colors from hacks folder
+        'dark-bg': '#0a0a0f',
+        'dark-card': '#1e293b',
+        'teal-glow': '#06b6d4',
+        'magenta-glow': '#ec4899',
+      },
+      boxShadow: {
+        'glow-teal': '0 0 20px rgba(6, 182, 212, 0.5)',
+        'glow-magenta': '0 0 20px rgba(236, 72, 153, 0.5)',
+        'glow-mixed': '0 0 30px rgba(6, 182, 212, 0.3), 0 0 30px rgba(236, 72, 153, 0.3)',
       },
     },
   },
