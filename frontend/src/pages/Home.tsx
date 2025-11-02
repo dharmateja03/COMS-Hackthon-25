@@ -10,7 +10,7 @@ export default function Home() {
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
             <div className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-pink-500 bg-clip-text text-transparent">
-              Classroom AI
+              CortexIQ
             </div>
 
             {/* Auth Buttons */}

@@ -52,7 +52,7 @@ export default function Login() {
             backgroundClip: 'text'
           }}
         >
-          Classroom AI
+          CortexIQ
         </h1>
 
         {/* Title */}

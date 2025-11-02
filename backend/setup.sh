@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 Classroom AI - Backend Setup"
+echo "🚀 CortexIQ - Backend Setup"
 echo "================================"
 
 # Check if .env exists

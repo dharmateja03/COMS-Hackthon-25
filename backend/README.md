@@ -1,6 +1,6 @@
-# Classroom AI - Backend
+# CortexIQ - Backend
 
-FastAPI backend for the Classroom AI learning platform.
+FastAPI backend for the CortexIQ learning platform.
 
 ## Setup
 

@@ -5,7 +5,7 @@ from typing import Optional
 class Settings(BaseSettings):
     # API Settings
     API_V1_STR: str = "/api/v1"
-    PROJECT_NAME: str = "Classroom AI"
+    PROJECT_NAME: str = "CortexIQ"
 
     # Database
     DATABASE_URL: str
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     SNOWFLAKE_ACCOUNT: Optional[str] = None
     SNOWFLAKE_USER: Optional[str] = None
     SNOWFLAKE_PASSWORD: Optional[str] = None
-    SNOWFLAKE_DATABASE: str = "CLASSROOM_AI"
+    SNOWFLAKE_DATABASE: str = "CORTEXIQ"
     SNOWFLAKE_SCHEMA: str = "PUBLIC"
     SNOWFLAKE_WAREHOUSE: str = "COMPUTE_WH"
     SNOWFLAKE_USE_CORTEX: bool = True

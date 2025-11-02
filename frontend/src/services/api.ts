@@ -13,6 +13,17 @@ class ApiError extends Error {
 async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const token = localStorage.getItem('token');
 
+  // List of endpoints that don't require authentication
+  const publicEndpoints = ['/auth/login', '/auth/register'];
+  const isPublicEndpoint = publicEndpoints.some(endpoint => url.startsWith(endpoint));
+
+  // Only check for token on protected endpoints
+  if (!token && !isPublicEndpoint) {
+    console.error('No authentication token found. Redirecting to login...');
+    window.location.href = '/login';
+    throw new ApiError(401, 'No authentication token');
+  }
+
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
   };
@@ -25,6 +36,10 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
     headers['Content-Type'] = 'application/json';
   }
 
+  // Debug log for development
+  console.log(`API Request: ${options.method || 'GET'} ${API_URL}${url}`);
+  console.log(`Token present: ${token ? 'Yes (length: ' + token.length + ')' : 'No'}`);
+
   const response = await fetch(`${API_URL}${url}`, {
     ...options,
     headers,
@@ -32,6 +47,14 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Request failed' }));
+
+    // If 401 on a protected endpoint, token is invalid or expired - redirect to login
+    if (response.status === 401 && !isPublicEndpoint) {
+      console.error('Authentication failed. Clearing token and redirecting to login...');
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+
     throw new ApiError(response.status, error.detail || 'Request failed');
   }
 
