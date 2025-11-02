@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
-import type { Course, User } from '../types';
+import type { Course, User, StandardCourse } from '../types';
 import { DashboardHeader } from '../components/DashboardHeader';
 import { CourseCard } from '../components/CourseCard';
 
@@ -13,7 +13,12 @@ export default function Dashboard() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newCourseName, setNewCourseName] = useState('');
   const [newCourseDescription, setNewCourseDescription] = useState('');
+  const [selectedCourseCode, setSelectedCourseCode] = useState<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
+  const [courseSuggestions, setCourseSuggestions] = useState<StandardCourse[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const debounceTimer = useRef<NodeJS.Timeout | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -39,15 +44,55 @@ export default function Dashboard() {
     }
   };
 
+  const handleCourseNameChange = async (value: string) => {
+    setNewCourseName(value);
+    setSelectedCourseCode(undefined);
+
+    // Clear previous timer
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current);
+    }
+
+    if (value.trim().length < 2) {
+      setCourseSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    setLoadingSuggestions(true);
+
+    // Debounce API call
+    debounceTimer.current = setTimeout(async () => {
+      try {
+        const suggestions = await api.searchCourses(value, 10);
+        setCourseSuggestions(suggestions);
+        setShowSuggestions(true);
+      } catch (err) {
+        console.error('Failed to fetch course suggestions:', err);
+        setCourseSuggestions([]);
+      } finally {
+        setLoadingSuggestions(false);
+      }
+    }, 300);
+  };
+
+  const handleSelectCourse = (course: StandardCourse) => {
+    setNewCourseName(course.display);
+    setSelectedCourseCode(course.code);
+    setShowSuggestions(false);
+    setCourseSuggestions([]);
+  };
+
   const handleCreateCourse = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreating(true);
     setError('');
 
     try {
-      await api.createCourse(newCourseName, newCourseDescription);
+      await api.createCourse(newCourseName, newCourseDescription, selectedCourseCode);
       setNewCourseName('');
       setNewCourseDescription('');
+      setSelectedCourseCode(undefined);
       setShowCreateForm(false);
       loadData();
     } catch (err: any) {
@@ -85,20 +130,52 @@ export default function Dashboard() {
           <div className="bg-dark-card border border-gray-700 rounded-xl p-6 mb-8">
             <h3 className="text-2xl font-semibold text-white mb-6">Create New Course</h3>
             <form onSubmit={handleCreateCourse} className="space-y-4">
-              <div>
+              <div className="relative">
                 <label htmlFor="name" className="block text-sm font-medium text-gray-300 mb-2">
                   Course Name
+                  {selectedCourseCode && (
+                    <span className="ml-2 text-xs text-cyan-400">
+                      ✓ Standard course selected: {selectedCourseCode}
+                    </span>
+                  )}
                 </label>
                 <input
                   id="name"
                   type="text"
                   value={newCourseName}
-                  onChange={(e) => setNewCourseName(e.target.value)}
+                  onChange={(e) => handleCourseNameChange(e.target.value)}
+                  onFocus={() => courseSuggestions.length > 0 && setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                   required
                   autoFocus
+                  autoComplete="off"
                   className="w-full px-4 py-3 rounded-lg bg-gray-800 border border-gray-700 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
-                  placeholder="Enter course name"
+                  placeholder="Start typing: CSCI, GCIS, Machine Learning..."
                 />
+
+                {/* Autocomplete Dropdown */}
+                {showSuggestions && courseSuggestions.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                    {loadingSuggestions && (
+                      <div className="px-4 py-2 text-gray-400 text-sm">Loading...</div>
+                    )}
+                    {courseSuggestions.map((course) => (
+                      <button
+                        key={course.code}
+                        type="button"
+                        onClick={() => handleSelectCourse(course)}
+                        className="w-full text-left px-4 py-3 hover:bg-gray-700 transition-colors border-b border-gray-700 last:border-b-0"
+                      >
+                        <div className="font-medium text-white">{course.code}</div>
+                        <div className="text-sm text-gray-400">{course.name}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-500 mt-1">
+                  💡 Type to search standard courses or enter your own custom name
+                </p>
               </div>
 
               <div>

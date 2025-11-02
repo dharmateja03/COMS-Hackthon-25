@@ -24,12 +24,20 @@ export interface Course {
   user_id: string;
   name: string;
   description?: string;
+  standard_course_code?: string;
   created_at: string;
 }
 
 export interface CourseCreate {
   name: string;
   description?: string;
+  standard_course_code?: string;
+}
+
+export interface StandardCourse {
+  code: string;
+  name: string;
+  display: string;
 }
 
 export interface Upload {

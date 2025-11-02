@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
@@ -8,6 +8,7 @@ from app.db.base import get_db
 from app.models.user import User
 from app.models.course import Course
 from app.api.auth import get_current_user
+from app.data.standard_courses import search_courses, get_all_courses, get_course_by_code
 
 router = APIRouter()
 
@@ -16,6 +17,7 @@ router = APIRouter()
 class CourseCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    standard_course_code: Optional[str] = None  # For shared embeddings
 
 
 class CourseUpdate(BaseModel):
@@ -28,10 +30,38 @@ class CourseResponse(BaseModel):
     user_id: str
     name: str
     description: Optional[str]
+    standard_course_code: Optional[str]
     created_at: str
 
     class Config:
         from_attributes = True
+
+
+class StandardCourseResponse(BaseModel):
+    code: str
+    name: str
+    display: str
+
+
+@router.get("/autocomplete", response_model=List[StandardCourseResponse])
+def autocomplete_courses(
+    query: str = Query("", description="Search query for course name or code"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum number of results"),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Autocomplete endpoint for standard course names
+    Returns course suggestions based on alphabetical matching
+    """
+    matches = search_courses(query, limit)
+    return [
+        StandardCourseResponse(
+            code=course["code"],
+            name=course["name"],
+            display=course["display"]
+        )
+        for course in matches
+    ]
 
 
 @router.post("", response_model=CourseResponse, status_code=status.HTTP_201_CREATED)
@@ -44,7 +74,8 @@ def create_course(
     new_course = Course(
         user_id=current_user.id,
         name=course_data.name,
-        description=course_data.description
+        description=course_data.description,
+        standard_course_code=course_data.standard_course_code
     )
 
     db.add(new_course)
@@ -56,6 +87,7 @@ def create_course(
         user_id=str(new_course.user_id),
         name=new_course.name,
         description=new_course.description,
+        standard_course_code=new_course.standard_course_code,
         created_at=new_course.created_at.isoformat()
     )
 
@@ -74,6 +106,7 @@ def get_courses(
             user_id=str(course.user_id),
             name=course.name,
             description=course.description,
+            standard_course_code=course.standard_course_code,
             created_at=course.created_at.isoformat()
         )
         for course in courses
@@ -103,6 +136,7 @@ def get_course(
         user_id=str(course.user_id),
         name=course.name,
         description=course.description,
+        standard_course_code=course.standard_course_code,
         created_at=course.created_at.isoformat()
     )
 
@@ -140,6 +174,7 @@ def update_course(
         user_id=str(course.user_id),
         name=course.name,
         description=course.description,
+        standard_course_code=course.standard_course_code,
         created_at=course.created_at.isoformat()
     )
 
