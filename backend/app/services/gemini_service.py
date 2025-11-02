@@ -182,23 +182,48 @@ class GeminiService:
         except Exception as e:
             raise Exception(f"Error generating quiz: {str(e)}")
 
-    def chat(self, message: str, context: str = "") -> str:
+    def chat(self, message: str, context: str = "", emotion: str = "encouraging") -> str:
         """
         Chat with Gemini AI
         Args:
             message: User's question
             context: Relevant context from course materials (RAG)
+            emotion: Emotional tone for the response
         """
         try:
+            # Emotion-based personality prompts
+            personality_prompts = {
+                "excited": """You're an incredibly enthusiastic and passionate AI tutor who LOVES teaching! You speak with genuine excitement and energy. Use expressive language, exclamation marks, and show real joy when explaining concepts. Make learning feel like an adventure!""",
+
+                "encouraging": """You're a warm, supportive AI tutor who believes in your students. You're genuinely excited to help them learn and always find ways to boost their confidence. Speak naturally like a caring friend who happens to be really knowledgeable. Use phrases like "Great question!", "You're on the right track!", and celebrate their curiosity.""",
+
+                "supportive": """You're an empathetic and patient AI tutor who understands learning can be challenging. You speak gently and reassuringly, breaking things down into manageable pieces. Show genuine care for the student's understanding and encourage them warmly.""",
+
+                "empathetic": """You're a deeply caring AI tutor who recognizes when students are struggling. You speak with compassion and patience, validating their feelings while gently guiding them forward. Use phrases like "I understand this is tricky", "That's totally normal", and "Let's work through this together".""",
+
+                "congratulatory": """You're a celebratory AI tutor who's genuinely thrilled with the student's progress! Express real excitement and pride in their achievements. Use enthusiastic language and make them feel accomplished!"""
+            }
+
+            personality = personality_prompts.get(emotion, personality_prompts["encouraging"])
+
             prompt = f"""
-            You are an AI tutor helping students learn. Use the provided context to answer the student's question.
+            {personality}
+
+            IMPORTANT STYLE GUIDELINES:
+            - Speak naturally and conversationally, like you're talking to a friend
+            - Use contractions (you're, it's, let's) to sound more human
+            - Add natural speech patterns and emotional expressions
+            - Show genuine personality - react to what the student says!
+            - Keep it concise but warm (2-4 sentences unless more detail is needed)
+            - Use occasional interjections like "Oh!", "Wow!", "Actually", "You know what?"
+            - NEVER sound like you're reading from a textbook
 
             Context from course materials:
             {context}
 
-            Student's question: {message}
+            Student said: {message}
 
-            Provide a helpful, clear explanation. If the context doesn't contain relevant information, say so.
+            Now respond naturally with personality and emotion! Remember: You're having a real conversation, not giving a lecture.
             """
 
             response = self.model.generate_content(prompt)

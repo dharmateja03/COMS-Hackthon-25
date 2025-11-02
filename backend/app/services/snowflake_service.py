@@ -76,39 +76,40 @@ class SnowflakeService:
             cursor = conn.cursor()
 
             # Build prompt for Cortex AI
-            prompt = f"""
-            You are an AI tutor analyzing a student's performance. Generate personalized study recommendations.
+            # Note: Avoid % signs in f-strings to prevent SQL formatting issues
+            weak_list = ', '.join(weak_topics) if weak_topics else 'None identified'
+            strong_list = ', '.join(strong_topics) if strong_topics else 'None identified'
+            scores_list = ', '.join([f'{score}' for score in recent_scores]) if recent_scores else 'No scores yet'
+            context_text = context if context else 'None'
 
-            Student Performance Data:
-            - Weak Topics: {', '.join(weak_topics) if weak_topics else 'None identified'}
-            - Strong Topics: {', '.join(strong_topics) if strong_topics else 'None identified'}
-            - Recent Quiz Scores: {', '.join([f'{score}%' for score in recent_scores]) if recent_scores else 'No scores yet'}
-            - Additional Context: {context if context else 'None'}
+            prompt = f"""You are an AI tutor analyzing a student's performance. Generate personalized study recommendations.
 
-            Generate a JSON response with:
-            1. List of 3-5 specific study recommendations
-            2. A detailed study plan (paragraph format)
-            3. Estimated study hours needed
-            4. Priority topics to focus on first
+Student Performance Data:
+- Weak Topics: {weak_list}
+- Strong Topics: {strong_list}
+- Recent Quiz Scores: {scores_list}
+- Additional Context: {context_text}
 
-            Format as JSON:
-            {{
-                "recommendations": ["recommendation 1", "recommendation 2", ...],
-                "study_plan": "detailed plan text",
-                "estimated_hours": number,
-                "priority_topics": ["topic 1", "topic 2", ...]
-            }}
-            """
+Generate a JSON response with:
+1. List of 3-5 specific study recommendations
+2. A detailed study plan (paragraph format)
+3. Estimated study hours needed
+4. Priority topics to focus on first
+
+Format as JSON:
+{{
+    "recommendations": ["recommendation 1", "recommendation 2", ...],
+    "study_plan": "detailed plan text",
+    "estimated_hours": 5,
+    "priority_topics": ["topic 1", "topic 2"]
+}}"""
 
             # Use Snowflake Cortex COMPLETE function
-            query = f"""
-            SELECT SNOWFLAKE.CORTEX.COMPLETE(
-                'mistral-large',
-                PARSE_JSON(%s)
-            ) as response;
-            """
+            # Using mixtral-8x7b which is available in most regions
+            # Available models: mistral-7b, mixtral-8x7b, llama2-70b-chat, llama3-8b, llama3-70b
+            query = "SELECT SNOWFLAKE.CORTEX.COMPLETE('mixtral-8x7b', %(prompt)s) as response"
 
-            cursor.execute(query, (json.dumps([{"role": "user", "content": prompt}]),))
+            cursor.execute(query, {'prompt': prompt})
             result = cursor.fetchone()
 
             if result and result[0]:

@@ -350,11 +350,12 @@ def voice_chat(
                     context += f"=== {upload.file_name} ===\n\n"
                     context += upload.text_content[:3000] + "\n\n"  # First 3000 chars per file
 
-    # Get AI response
+    # Get AI response with emotion
     try:
         response_text = gemini_service.chat(
             message=chat_request.message,
-            context=context
+            context=context,
+            emotion=chat_request.emotion
         )
     except Exception as e:
         raise HTTPException(

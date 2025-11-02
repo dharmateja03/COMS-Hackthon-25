@@ -80,14 +80,24 @@ class VoiceService:
                 "style": 0.0,
             },
             "encouraging": {
-                "stability": 0.4,  # More expressive
-                "similarity_boost": 0.8,
-                "style": 0.3,  # More stylized
+                "stability": 0.3,  # Very expressive
+                "similarity_boost": 0.85,
+                "style": 0.6,  # Highly stylized for warmth
             },
             "excited": {
-                "stability": 0.3,  # Very expressive
-                "similarity_boost": 0.75,
-                "style": 0.5,  # Highly stylized
+                "stability": 0.2,  # Extremely expressive
+                "similarity_boost": 0.8,
+                "style": 0.75,  # Maximum style for enthusiasm
+            },
+            "supportive": {
+                "stability": 0.35,  # Expressive but gentle
+                "similarity_boost": 0.85,
+                "style": 0.4,
+            },
+            "empathetic": {
+                "stability": 0.4,  # Warm and caring
+                "similarity_boost": 0.85,
+                "style": 0.35,
             },
             "patient": {
                 "stability": 0.7,  # Very stable
