@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
 
 class ApiError extends Error {
   status: number;
@@ -108,10 +108,15 @@ export const api = {
     return response.json();
   },
 
-  createCourse: async (name: string, description?: string) => {
+  searchCourses: async (query: string, limit: number = 10) => {
+    const response = await fetchWithAuth(`/courses/autocomplete?query=${encodeURIComponent(query)}&limit=${limit}`);
+    return response.json();
+  },
+
+  createCourse: async (name: string, description?: string, standardCourseCode?: string) => {
     const response = await fetchWithAuth('/courses', {
       method: 'POST',
-      body: JSON.stringify({ name, description }),
+      body: JSON.stringify({ name, description, standard_course_code: standardCourseCode }),
     });
     return response.json();
   },

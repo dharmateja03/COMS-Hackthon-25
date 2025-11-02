@@ -21,6 +21,7 @@ export default function CoursePage() {
 
   // Upload state
   const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Learning state
   const [selectedPdfForViewing, setSelectedPdfForViewing] = useState<Upload | null>(null);
@@ -237,11 +238,19 @@ export default function CoursePage() {
       const newUpload = await api.uploadFile(courseId!, file);
       setUploads([...uploads, newUpload]);
       setTimeout(() => loadCourseData(), 2000);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to upload file');
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
   };
 
   const handleSendMessage = async () => {
@@ -567,8 +576,9 @@ export default function CoursePage() {
             <div className="mb-12">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-2xl font-bold text-white">Course Materials</h2>
-                <label className={uploading ? 'cursor-not-allowed' : 'cursor-pointer'}>
+                <div>
                   <input
+                    ref={fileInputRef}
                     type="file"
                     accept=".pdf,.mp4,.avi,.mov,.mkv,.webm"
                     onChange={handleFileUpload}
@@ -577,13 +587,14 @@ export default function CoursePage() {
                   />
                   <button
                     type="button"
+                    onClick={handleUploadClick}
                     disabled={uploading}
-                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-cyan-500 to-pink-500 rounded-lg font-semibold transition-all duration-300 hover:shadow-[0_0_30px_rgba(6,182,212,0.5),0_0_30px_rgba(236,72,153,0.5)] hover:scale-105 disabled:opacity-50"
+                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-cyan-500 to-pink-500 rounded-lg font-semibold transition-all duration-300 hover:shadow-[0_0_30px_rgba(6,182,212,0.5),0_0_30px_rgba(236,72,153,0.5)] hover:scale-105 disabled:opacity-50 cursor-pointer"
                   >
                     <PlusIcon className="w-5 h-5" />
                     {uploading ? 'Uploading...' : 'Upload Material'}
                   </button>
-                </label>
+                </div>
               </div>
 
               {/* Knowledge Retention Legend */}
