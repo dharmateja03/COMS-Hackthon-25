@@ -26,5 +26,13 @@ export const uploadService = {
 
   async deleteUpload(uploadId: string): Promise<void> {
     await api.delete(`/uploads/${uploadId}`);
+  },
+
+  async getFileUrl(courseId: string, uploadId: string): Promise<string> {
+    const response = await api.get(`/courses/${courseId}/files/${uploadId}`, {
+      responseType: 'blob'
+    });
+    const blob = new Blob([response.data], { type: response.headers['content-type'] });
+    return URL.createObjectURL(blob);
   }
 };
