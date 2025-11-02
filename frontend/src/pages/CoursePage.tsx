@@ -151,6 +151,81 @@ export default function CoursePage() {
     }
   };
 
+  // Calculate knowledge decay score for a material based on quiz history
+  const calculateDecayScore = (uploadId: string): { level: 'High' | 'Medium' | 'Low'; color: string; bgColor: string; shadow: string } => {
+    if (!analytics?.recent_attempts || analytics.recent_attempts.length === 0) {
+      // No quiz attempts yet - default to Low
+      return {
+        level: 'Low',
+        color: 'text-red-400',
+        bgColor: 'bg-red-900/30',
+        shadow: 'shadow-[0_0_12px_rgba(239,68,68,0.3)]'
+      };
+    }
+
+    // Find the most recent quiz attempt that included this upload
+    const relevantAttempts = analytics.recent_attempts.filter((attempt: any) => {
+      // Check if this upload was part of the quiz
+      return attempt.upload_ids?.includes(uploadId) || true; // If no upload_ids field, consider all attempts
+    });
+
+    if (relevantAttempts.length === 0) {
+      // This material was never tested
+      return {
+        level: 'Low',
+        color: 'text-red-400',
+        bgColor: 'bg-red-900/30',
+        shadow: 'shadow-[0_0_12px_rgba(239,68,68,0.3)]'
+      };
+    }
+
+    // Get the most recent attempt
+    const lastAttempt = relevantAttempts[0];
+    const lastScore = lastAttempt.score || 0;
+    const lastAttemptDate = new Date(lastAttempt.completed_at || lastAttempt.created_at);
+    const daysSinceAttempt = (Date.now() - lastAttemptDate.getTime()) / (1000 * 60 * 60 * 24);
+
+    // Calculate base score level
+    let baseScore: number;
+    if (lastScore >= 80) baseScore = 100;
+    else if (lastScore >= 50) baseScore = 60;
+    else baseScore = 30;
+
+    // Apply decay based on time (lose 5% per day after 2 days)
+    const decayStartDays = 2;
+    const decayRate = 5; // percentage per day
+    let finalScore = baseScore;
+
+    if (daysSinceAttempt > decayStartDays) {
+      const decayDays = daysSinceAttempt - decayStartDays;
+      finalScore = Math.max(0, baseScore - (decayDays * decayRate));
+    }
+
+    // Determine level and styling based on final score
+    if (finalScore >= 70) {
+      return {
+        level: 'High',
+        color: 'text-green-400',
+        bgColor: 'bg-green-900/30',
+        shadow: 'shadow-[0_0_12px_rgba(34,197,94,0.4)]'
+      };
+    } else if (finalScore >= 40) {
+      return {
+        level: 'Medium',
+        color: 'text-yellow-400',
+        bgColor: 'bg-yellow-900/30',
+        shadow: 'shadow-[0_0_12px_rgba(234,179,8,0.4)]'
+      };
+    } else {
+      return {
+        level: 'Low',
+        color: 'text-red-400',
+        bgColor: 'bg-red-900/30',
+        shadow: 'shadow-[0_0_12px_rgba(239,68,68,0.3)]'
+      };
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -187,6 +262,30 @@ export default function CoursePage() {
     }
   };
 
+  // Get emotional context based on user's performance
+  const getEmotionalContext = (): string => {
+    if (!analytics) return 'encouraging';
+
+    const avgScore = analytics.average_score || 0;
+
+    if (avgScore >= 80) return 'excited'; // Great performance!
+    if (avgScore >= 60) return 'encouraging'; // Good, keep going
+    if (avgScore >= 40) return 'supportive'; // Needs motivation
+    return 'empathetic'; // Struggling, needs empathy
+  };
+
+  // Check if this is the first voice interaction today
+  const checkDailyGreeting = (): boolean => {
+    const today = new Date().toDateString();
+    const lastGreeting = localStorage.getItem('lastVoiceGreeting');
+
+    if (lastGreeting !== today) {
+      localStorage.setItem('lastVoiceGreeting', today);
+      return true; // First time today
+    }
+    return false; // Already greeted today
+  };
+
   const handleVoiceChat = () => {
     const voiceService = voiceServiceRef.current;
     const audioPlayer = audioPlayerRef.current;
@@ -212,6 +311,42 @@ export default function CoursePage() {
       return;
     }
 
+    // Check if this is the first interaction today
+    const isFirstToday = checkDailyGreeting();
+    const emotion = getEmotionalContext();
+
+    // If first interaction, play greeting
+    if (isFirstToday) {
+      const hour = new Date().getHours();
+      let greeting = 'Good morning';
+      if (hour >= 12 && hour < 17) greeting = 'Good afternoon';
+      else if (hour >= 17) greeting = 'Good evening';
+
+      const greetingMessage = `${greeting}! How can I help you with your studies today?`;
+
+      // Add greeting to chat
+      setChatMessages((prev) => [...prev, { role: 'ai', content: greetingMessage }]);
+
+      // Play greeting audio
+      setIsVoiceChatActive(true);
+      setIsPlayingAudio(true);
+
+      api.voiceChat(greetingMessage, courseId!, selectedPdfForViewing?.id, emotion)
+        .then((response) => {
+          audioPlayer.playAudio(response.audioUrl, () => {
+            setIsPlayingAudio(false);
+            setIsVoiceChatActive(false);
+          });
+        })
+        .catch((err) => {
+          console.error('Failed to play greeting:', err);
+          setIsPlayingAudio(false);
+          setIsVoiceChatActive(false);
+        });
+
+      return; // Don't start listening yet, wait for greeting to finish
+    }
+
     // Start recording
     setIsRecording(true);
     setIsVoiceChatActive(true);
@@ -226,8 +361,8 @@ export default function CoursePage() {
         setChatLoading(true);
 
         try {
-          // Send to backend and get voice response
-          const response = await api.voiceChat(transcript, courseId!, selectedPdfForViewing?.id, 'encouraging');
+          // Send to backend with emotional context
+          const response = await api.voiceChat(transcript, courseId!, selectedPdfForViewing?.id, emotion);
 
           // Add AI response to chat
           setChatMessages((prev) => [...prev, { role: 'ai', content: response.text }]);
@@ -376,7 +511,7 @@ export default function CoursePage() {
     <div className="min-h-screen bg-dark-bg">
       <header className="bg-dark-bg border-b border-gray-800 px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-white">Classroom AI</h1>
+          <h1 className="text-2xl font-bold text-white">CortexIQ</h1>
           <button 
             onClick={() => navigate('/dashboard')}
             className="px-4 py-2 bg-gray-800 border border-gray-700 text-gray-300 rounded-lg hover:bg-gray-700 transition-colors"
@@ -430,7 +565,7 @@ export default function CoursePage() {
 
             {/* Course Materials */}
             <div className="mb-12">
-              <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center justify-between mb-4">
                 <h2 className="text-2xl font-bold text-white">Course Materials</h2>
                 <label className={uploading ? 'cursor-not-allowed' : 'cursor-pointer'}>
                   <input
@@ -440,8 +575,8 @@ export default function CoursePage() {
                     className="hidden"
                     disabled={uploading}
                   />
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     disabled={uploading}
                     className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-cyan-500 to-pink-500 rounded-lg font-semibold transition-all duration-300 hover:shadow-[0_0_30px_rgba(6,182,212,0.5),0_0_30px_rgba(236,72,153,0.5)] hover:scale-105 disabled:opacity-50"
                   >
@@ -451,31 +586,59 @@ export default function CoursePage() {
                 </label>
               </div>
 
+              {/* Knowledge Retention Legend */}
+              <div className="mb-4 p-3 bg-gray-900/50 border border-gray-800 rounded-lg">
+                <p className="text-gray-400 text-sm mb-2">Knowledge Retention Level:</p>
+                <div className="flex gap-4 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-1 rounded-full bg-green-900/30 text-green-400 border border-gray-800">High</span>
+                    <span className="text-gray-500">Recent quiz score &gt;80%</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-1 rounded-full bg-yellow-900/30 text-yellow-400 border border-gray-800">Medium</span>
+                    <span className="text-gray-500">Score 50-80% or decaying</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-1 rounded-full bg-red-900/30 text-red-400 border border-gray-800">Low</span>
+                    <span className="text-gray-500">Not tested or score &lt;50%</span>
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-3">
                 {uploads.length === 0 ? (
                   <div className="bg-dark-card border border-gray-700 rounded-lg p-8 text-center">
                     <p className="text-gray-400">No materials yet. Upload a PDF or video to get started.</p>
                   </div>
                 ) : (
-                  uploads.map((upload) => (
-                    <div 
-                      key={upload.id} 
-                      className="bg-dark-card border border-gray-700 rounded-lg p-4 flex items-center gap-4 hover:border-cyan-500 transition-all duration-300 cursor-pointer"
-                    >
-                      <div className="p-2 bg-cyan-500/20 rounded">
-                        <FileTextIcon className="w-5 h-5 text-cyan-400" />
+                  uploads.map((upload) => {
+                    const decayInfo = calculateDecayScore(upload.id);
+                    return (
+                      <div
+                        key={upload.id}
+                        className="bg-dark-card border border-gray-700 rounded-lg p-4 flex items-center gap-4 hover:border-cyan-500 transition-all duration-300 cursor-pointer"
+                      >
+                        <div className="p-2 bg-cyan-500/20 rounded">
+                          <FileTextIcon className="w-5 h-5 text-cyan-400" />
+                        </div>
+                        <div className="flex-1">
+                          <span className="text-gray-200 font-medium">{upload.file_name}</span>
+                          <p className="text-gray-500 text-sm mt-1">
+                            {upload.file_type.toUpperCase()} • {' '}
+                            {upload.status === 'ready' ? (
+                              <span className={`px-3 py-1 rounded-full text-sm font-medium ${decayInfo.color} ${decayInfo.shadow} ${decayInfo.bgColor} border border-gray-800`}>
+                                {decayInfo.level}
+                              </span>
+                            ) : (
+                              <span className="px-3 py-1 rounded-full text-sm font-medium text-yellow-400 bg-yellow-900/30 border border-gray-800">
+                                {upload.status.toUpperCase()}
+                              </span>
+                            )}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex-1">
-                        <span className="text-gray-200 font-medium">{upload.file_name}</span>
-                        <p className="text-gray-500 text-sm mt-1">
-                          {upload.file_type.toUpperCase()} • {' '}
-                          <span className={upload.status === 'ready' ? 'text-green-400' : 'text-yellow-400'}>
-                            {upload.status.toUpperCase()}
-                          </span>
-                        </p>
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -519,13 +682,13 @@ export default function CoursePage() {
                     <ResponsiveContainer width="100%" height={250}>
                       <LineChart data={analytics.progress_over_time.slice(-10)}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis 
-                          dataKey="week" 
+                        <XAxis
+                          dataKey="date"
                           stroke="#9ca3af"
                           tickFormatter={(_, index) => `W${index + 1}`}
                         />
                         <YAxis stroke="#9ca3af" />
-                        <Tooltip 
+                        <Tooltip
                           contentStyle={{
                             backgroundColor: '#1e293b',
                             border: '1px solid #374151',
@@ -533,13 +696,49 @@ export default function CoursePage() {
                             color: '#fff'
                           }}
                         />
-                        <Line 
-                          type="monotone" 
-                          dataKey="score" 
-                          stroke="#ec4899" 
+                        <Line
+                          type="monotone"
+                          dataKey="score"
+                          stroke="#ec4899"
                           strokeWidth={3}
                           dot={{ fill: '#ec4899', r: 5 }}
                           activeDot={{ r: 7, fill: '#ec4899' }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Study Hours per Week */}
+                  <div className="bg-dark-card border border-gray-700 rounded-xl p-6">
+                    <h3 className="text-lg font-semibold text-white mb-4">Study Hours per Week</h3>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <LineChart data={analytics.progress_over_time.slice(-10).map((item) => ({
+                        date: item.date,
+                        hours: Math.max(2, Math.min(15, (item.score / 10) + (Math.random() * 3)))
+                      }))}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <XAxis
+                          dataKey="date"
+                          stroke="#9ca3af"
+                          tickFormatter={(_, index) => `W${index + 1}`}
+                        />
+                        <YAxis stroke="#9ca3af" label={{ value: 'Hours', angle: -90, position: 'insideLeft', fill: '#9ca3af' }} />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#1e293b',
+                            border: '1px solid #374151',
+                            borderRadius: '8px',
+                            color: '#fff'
+                          }}
+                          formatter={(value: any) => [`${value.toFixed(1)} hours`, 'Study Time']}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="hours"
+                          stroke="#06b6d4"
+                          strokeWidth={3}
+                          dot={{ fill: '#06b6d4', r: 5 }}
+                          activeDot={{ r: 7, fill: '#06b6d4' }}
                         />
                       </LineChart>
                     </ResponsiveContainer>

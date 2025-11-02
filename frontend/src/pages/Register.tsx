@@ -64,7 +64,7 @@ export default function Register() {
             backgroundClip: 'text'
           }}
         >
-          Classroom AI
+          CortexIQ
         </h1>
 
         {/* Title */}

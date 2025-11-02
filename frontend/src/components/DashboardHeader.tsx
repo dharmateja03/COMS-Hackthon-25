@@ -19,7 +19,7 @@ export function DashboardHeader({ userEmail, onCreateCourse }: DashboardHeaderPr
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         {/* Left side */}
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-bold text-white">Classroom AI</h1>
+          <h1 className="text-2xl font-bold text-white">CortexIQ</h1>
           <p className="text-sm text-gray-400">Welcome, {userEmail || 'user@email.com'}</p>
         </div>
 

@@ -23,7 +23,7 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    return {"message": "Classroom AI API", "version": "1.0.0"}
+    return {"message": "CortexIQ API", "version": "1.0.0"}
 
 
 @app.get("/health")
