@@ -1,0 +1,35 @@
+-- Snowflake Setup for ClassroomAI
+-- Run this in Snowflake Worksheet
+
+-- Create database for your app
+CREATE DATABASE IF NOT EXISTS CLASSROOM_AI;
+
+-- Create warehouse (compute power)
+CREATE WAREHOUSE IF NOT EXISTS COMPUTE_WH
+WITH
+  WAREHOUSE_SIZE = 'XSMALL'
+  AUTO_SUSPEND = 300
+  AUTO_RESUME = TRUE
+  INITIALLY_SUSPENDED = FALSE;
+
+-- Use the database
+USE DATABASE CLASSROOM_AI;
+
+-- Create schema
+CREATE SCHEMA IF NOT EXISTS PUBLIC;
+
+-- Grant privileges (important!)
+GRANT USAGE ON DATABASE CLASSROOM_AI TO ROLE ACCOUNTADMIN;
+GRANT USAGE ON SCHEMA CLASSROOM_AI.PUBLIC TO ROLE ACCOUNTADMIN;
+GRANT ALL ON WAREHOUSE COMPUTE_WH TO ROLE ACCOUNTADMIN;
+
+-- Verify it worked
+SHOW DATABASES;
+SHOW WAREHOUSES;
+SHOW SCHEMAS IN DATABASE CLASSROOM_AI;
+
+-- Test Cortex AI is available (optional)
+SELECT SNOWFLAKE.CORTEX.COMPLETE(
+    'mistral-large',
+    'Say "Hello from Snowflake Cortex AI!"'
+) as test_response;

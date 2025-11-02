@@ -305,7 +305,7 @@ export default function CoursePage() {
       return;
     }
 
-    // If already recording or playing, stop
+    // If already recording, stop listening
     if (isRecording) {
       voiceService.stopListening();
       setIsRecording(false);
@@ -313,48 +313,67 @@ export default function CoursePage() {
       return;
     }
 
+    // If audio is playing, stop it and start listening
     if (isPlayingAudio) {
       audioPlayer.stopAudio();
       setIsPlayingAudio(false);
-      setIsVoiceChatActive(false);
+      // Immediately start listening after stopping audio
+      startListeningForVoice(voiceService, audioPlayer);
       return;
     }
 
-    // Check if this is the first interaction today
-    const isFirstToday = checkDailyGreeting();
-    const emotion = getEmotionalContext();
-
-    // If first interaction, play greeting
-    if (isFirstToday) {
-      const hour = new Date().getHours();
-      let greeting = 'Good morning';
-      if (hour >= 12 && hour < 17) greeting = 'Good afternoon';
-      else if (hour >= 17) greeting = 'Good evening';
-
-      const greetingMessage = `${greeting}! How can I help you with your studies today?`;
-
-      // Add greeting to chat
-      setChatMessages((prev) => [...prev, { role: 'ai', content: greetingMessage }]);
-
-      // Play greeting audio
-      setIsVoiceChatActive(true);
-      setIsPlayingAudio(true);
-
-      api.voiceChat(greetingMessage, courseId!, selectedPdfForViewing?.id, emotion)
-        .then((response) => {
-          audioPlayer.playAudio(response.audioUrl, () => {
-            setIsPlayingAudio(false);
-            setIsVoiceChatActive(false);
-          });
-        })
-        .catch((err) => {
-          console.error('Failed to play greeting:', err);
-          setIsPlayingAudio(false);
-          setIsVoiceChatActive(false);
-        });
-
-      return; // Don't start listening yet, wait for greeting to finish
+    // If not active, play greeting first
+    if (!isVoiceChatActive) {
+      playGreeting(voiceService, audioPlayer);
+      return;
     }
+
+    // Otherwise, start listening
+    startListeningForVoice(voiceService, audioPlayer);
+  };
+
+  const playGreeting = (voiceService: VoiceService, audioPlayer: AudioPlayerService) => {
+    const emotion = getEmotionalContext();
+    const courseName = course?.name || 'this course';
+
+    // Create more natural, enthusiastic greetings with variations
+    const greetings = [
+      `Hey there! I'm so excited to help you with ${courseName}! This is gonna be great - I know this material inside and out, and I can't wait to help you master it too. So, what's on your mind? What would you like to explore first?`,
+
+      `Hi! Welcome to ${courseName}! I'm your AI tutor, and honestly? I absolutely love teaching this stuff! Whether you've got questions, need clarification, or just want to dive deeper into any topic, I'm here for you. What are you curious about?`,
+
+      `Hey! So glad you're here for ${courseName}! I'm your personal AI tutor, and I'm really pumped to help you learn. I've got all the course materials at my fingertips, and I'm ready to explain things in whatever way makes sense to you. What would you like to start with?`,
+
+      `Hello! Ready to tackle ${courseName} together? I'm your AI tutor, and I genuinely love helping students understand this material. No question is too big or too small - I'm here to make sure you really get this stuff. What's your first question?`
+    ];
+
+    // Pick a random greeting for variety
+    const greetingMessage = greetings[Math.floor(Math.random() * greetings.length)];
+
+    // Add greeting to chat
+    setChatMessages((prev) => [...prev, { role: 'ai', content: greetingMessage }]);
+
+    // Play greeting audio using 11 Labs with emotion
+    setIsVoiceChatActive(true);
+    setIsPlayingAudio(true);
+
+    api.voiceChat(greetingMessage, courseId!, selectedPdfForViewing?.id, emotion)
+      .then((response) => {
+        audioPlayer.playAudio(response.audioUrl, () => {
+          setIsPlayingAudio(false);
+          // After greeting finishes, automatically start listening
+          startListeningForVoice(voiceService, audioPlayer);
+        });
+      })
+      .catch((err) => {
+        console.error('Failed to play greeting:', err);
+        setIsPlayingAudio(false);
+        setIsVoiceChatActive(false);
+      });
+  };
+
+  const startListeningForVoice = (voiceService: VoiceService, audioPlayer: AudioPlayerService) => {
+    const emotion = getEmotionalContext();
 
     // Start recording
     setIsRecording(true);
@@ -380,7 +399,8 @@ export default function CoursePage() {
           setIsPlayingAudio(true);
           audioPlayer.playAudio(response.audioUrl, () => {
             setIsPlayingAudio(false);
-            setIsVoiceChatActive(false);
+            // After AI response, automatically start listening again
+            startListeningForVoice(voiceService, audioPlayer);
           });
         } catch (err: any) {
           setError(err.message || 'Failed to get voice response');
@@ -963,38 +983,58 @@ export default function CoursePage() {
                       {/* Animated Bubble with Ripples */}
                       <div className="relative">
                         {/* Ripple Effects */}
-                        <div 
+                        <div
                           className={`absolute inset-0 rounded-full animate-ping ${
-                            isRecording ? 'bg-cyan-500/20' : 'bg-pink-500/20'
+                            isRecording ? 'bg-red-500/20' : isPlayingAudio ? 'bg-yellow-500/20' : 'bg-pink-500/20'
                           }`}
                           style={{ animationDuration: '2s' }}
                         />
-                        <div 
+                        <div
                           className={`absolute inset-0 rounded-full animate-ping ${
-                            isRecording ? 'bg-cyan-500/10' : 'bg-pink-500/10'
+                            isRecording ? 'bg-red-500/10' : isPlayingAudio ? 'bg-yellow-500/10' : 'bg-pink-500/10'
                           }`}
                           style={{ animationDuration: '3s', animationDelay: '0.5s' }}
                         />
                         {/* Main Bubble */}
-                        <button 
+                        <button
                           onClick={handleVoiceChat}
                           className={`relative w-32 h-32 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 animate-bounce ${
-                            isRecording 
-                              ? 'bg-cyan-500/30 shadow-[0_0_40px_rgba(6,182,212,0.5)]' 
+                            isRecording
+                              ? 'bg-red-500/30 shadow-[0_0_40px_rgba(239,68,68,0.5)]'
+                              : isPlayingAudio
+                              ? 'bg-yellow-500/30 shadow-[0_0_40px_rgba(234,179,8,0.5)]'
                               : 'bg-pink-500/30 shadow-[0_0_40px_rgba(236,72,153,0.5)]'
                           }`}
                           style={{ animationDuration: '2s' }}
                         >
-                          <svg className={`w-12 h-12 ${isRecording ? 'text-cyan-400' : 'text-pink-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
+                          {isRecording ? (
+                            <svg className="w-12 h-12 text-red-400" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                              <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                            </svg>
+                          ) : isPlayingAudio ? (
+                            <svg className="w-12 h-12 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10h1v4H9v-4zm5 0h1v4h-1v-4z" />
+                            </svg>
+                          ) : (
+                            <svg className="w-12 h-12 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          )}
                         </button>
                       </div>
                       {/* Status Text */}
                       <div className="absolute bottom-8 text-center">
                         <p className="text-sm text-gray-400">
-                          {isRecording ? 'Listening...' : isPlayingAudio ? 'AI Speaking...' : 'Click to start'}
+                          {isRecording ? '🎤 Listening to you...' : isPlayingAudio ? '🔊 AI Speaking... (Tap to stop)' : '🎯 Tap to start AI tutor'}
                         </p>
+                        {!isVoiceChatActive && (
+                          <p className="text-xs text-gray-500 mt-2">
+                            I'll introduce the course and listen to your questions
+                          </p>
+                        )}
                       </div>
                     </div>
                   )}

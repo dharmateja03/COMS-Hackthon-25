@@ -87,11 +87,13 @@ class DigitalOceanAIService:
 
             headers = {
                 "Authorization": f"Bearer {self.api_token}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://localhost:8000",  # Required by OpenRouter
+                "X-Title": "ClassroomAI"  # Optional but recommended
             }
 
             payload = {
-                "model": "llama-3.1-70b-instruct",  # DigitalOcean 1-Click Model
+                "model": "meta-llama/llama-3.1-70b-instruct",  # Full OpenRouter model name
                 "messages": [
                     {"role": "system", "content": "You are an expert educational AI assistant."},
                     {"role": "user", "content": prompt}
@@ -100,8 +102,9 @@ class DigitalOceanAIService:
                 "max_tokens": 3000
             }
 
+            # OpenRouter endpoint (already includes /api/v1)
             response = requests.post(
-                f"{self.gradient_endpoint}/v1/chat/completions",
+                f"{self.gradient_endpoint}/chat/completions",
                 headers=headers,
                 json=payload,
                 timeout=30
@@ -233,18 +236,21 @@ Please provide a helpful, encouraging response that:
 
             headers = {
                 "Authorization": f"Bearer {self.api_token}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://localhost:8000",
+                "X-Title": "ClassroomAI"
             }
 
             payload = {
-                "model": "llama-3.1-70b-instruct",
+                "model": "meta-llama/llama-3.1-70b-instruct",
                 "messages": messages,
                 "temperature": 0.7,
                 "max_tokens": 500
             }
 
+            # OpenRouter endpoint (already includes /api/v1)
             response = requests.post(
-                f"{self.gradient_endpoint}/v1/chat/completions",
+                f"{self.gradient_endpoint}/chat/completions",
                 headers=headers,
                 json=payload,
                 timeout=30
@@ -313,11 +319,13 @@ Please provide a helpful, encouraging response that:
 
             headers = {
                 "Authorization": f"Bearer {self.api_token}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://localhost:8000",
+                "X-Title": "ClassroomAI"
             }
 
             payload = {
-                "model": "llama-3.1-70b-instruct",
+                "model": "meta-llama/llama-3.1-70b-instruct",
                 "messages": [
                     {"role": "user", "content": prompt}
                 ],
@@ -325,8 +333,9 @@ Please provide a helpful, encouraging response that:
                 "max_tokens": 1000
             }
 
+            # OpenRouter endpoint (already includes /api/v1)
             response = requests.post(
-                f"{self.gradient_endpoint}/v1/chat/completions",
+                f"{self.gradient_endpoint}/chat/completions",
                 headers=headers,
                 json=payload,
                 timeout=30
